@@ -1,0 +1,140 @@
+function imported sqrt(
+  n : real
+) returns (
+  r : real
+);
+(*@contract
+  assume (n >= 0.0);
+  guarantee ((r >= 0.0) and ((r * r) = n));
+*)
+
+contract StopWatchSpec(
+  toggle : bool;
+  reset : bool
+) returns (
+  time : int
+);
+let
+  var on : bool = (toggle -> (((pre on) and (not toggle)) or ((not (pre on)) and toggle)));
+  assume (not (toggle and reset));
+  guarantee ((on => (time = 1)) -> true);
+  guarantee (((not on) => (time = 0)) -> true);
+  guarantee (time >= 0);
+  guarantee (((not reset) and Since(reset, even(Count(toggle)))) => Stable(time));
+  guarantee (((not reset) and Since(reset, (not even(Count(toggle))))) => Increased(time));
+  guarantee (true -> (((not even(Count(toggle))) and (Count(reset) = 0)) => (time > (pre time))));
+  mode resetting (
+    require reset;
+    ensure  (time = 0);
+  );
+  mode running (
+    require on;
+    require (not reset);
+    ensure  (true -> (time = ((pre time) + 1)));
+  );
+  mode stopped (
+    require (not reset);
+    require (not on);
+    ensure  (true -> (time = (pre time)));
+  );
+tel;
+
+function even(
+  N : int
+) returns (
+  B : bool
+);
+let
+  B = ((N mod 2) = 0);
+tel;
+
+function toInt(
+  X : bool
+) returns (
+  N : int
+);
+let
+  N = (if X then 1 else 0);
+tel;
+
+node Count(
+  X : bool
+) returns (
+  N : int
+);
+let
+  N = (toInt(X) -> (toInt(X) + (pre N)));
+
+tel;
+
+node Sofar(
+  X : bool
+) returns (
+  Y : bool
+);
+let
+  Y = (X -> (X and (pre Y)));
+
+tel;
+
+node Since(
+  X : bool;
+  Y : bool
+) returns (
+  Z : bool
+);
+let
+  Z = (X or (Y and (false -> (pre Z))));
+
+tel;
+
+node SinceIncl(
+  X : bool;
+  Y : bool
+) returns (
+  Z : bool
+);
+let
+  Z = (Y and (X or (false -> (pre Z))));
+
+tel;
+
+node Increased(
+  N : int
+) returns (
+  B : bool
+);
+let
+  B = (true -> (N > (pre N)));
+
+tel;
+
+node Stable(
+  N : int
+) returns (
+  B : bool
+);
+let
+  B = (true -> (N = (pre N)));
+
+tel;
+
+node Stopwatch(
+  toggle : bool;
+  reset : bool
+) returns (
+  count : int
+);
+(*@contract
+  import StopWatchSpec(toggle, reset) returns (count);
+  guarantee (not ((::StopWatchSpec::resetting and ::StopWatchSpec::running) and ::StopWatchSpec::stopped));
+*)
+var
+  running : bool;
+let
+  --%MAIN;
+  running = ((false -> (pre running)) <> toggle);
+
+  count = (if reset then 0 else (if running then (1 -> ((pre count) + 1)) else (0 -> (pre count))));
+
+tel;
