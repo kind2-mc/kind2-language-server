@@ -18,7 +18,7 @@ public class LanguageServerTest {
       params.setInitializationOptions(new String[] {"-json"});
       s.initialize(params).get();
       String program = new String(Files.readAllBytes(Paths.get("files/stopwatch.lus")));
-      System.out.println(s.check(program).get());
+      //System.out.println(s.check(program).get());
       assertEquals(0, (int) s.shutdown().get());
     } catch (InterruptedException | ExecutionException | IOException e) {
       // TODO Auto-generated catch block

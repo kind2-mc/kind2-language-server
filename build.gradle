@@ -15,3 +15,5 @@ dependencies {
 test {
   useJUnitPlatform()
 }
+
+mainClassName = "edu.uiowa.kind2.lsp.Main"
