@@ -130,7 +130,7 @@ node Stopwatch(
   guarantee (not ((::StopWatchSpec::resetting and ::StopWatchSpec::running) and ::StopWatchSpec::stopped));
 *)
 var
-  running : bool;
+  running : boo;
 let
   --%MAIN;
   running = ((false -> (pre running)) <> toggle);

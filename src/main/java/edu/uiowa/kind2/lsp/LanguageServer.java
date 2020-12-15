@@ -1,6 +1,7 @@
 package edu.uiowa.kind2.lsp;
 
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -13,8 +14,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.eclipse.lsp4j.DidChangeConfigurationParams;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidChangeWatchedFilesParams;
@@ -38,6 +37,10 @@ import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.LanguageClientAware;
 import org.eclipse.lsp4j.services.TextDocumentService;
 import org.eclipse.lsp4j.services.WorkspaceService;
+import edu.uiowa.kind2.api.Kind2Api;
+import edu.uiowa.kind2.results.Kind2Log;
+import edu.uiowa.kind2.results.Kind2LogLevel;
+import edu.uiowa.kind2.results.Kind2Result;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.CodeLens;
@@ -59,13 +62,15 @@ public class LanguageServer
   private LanguageClient client;
   private Map<String, String> openDocuments;
   private ExecutorService threads;
+  private Map<String, Position> components;
 
   public LanguageServer() {
     process = null;
     options = new ArrayList<>();
     client = null;
-    threads = Executors.newCachedThreadPool();
+    threads = Executors.newSingleThreadExecutor();
     openDocuments = new HashMap<>();
+    components = new HashMap<>();
   }
 
   public String getText(String uri) throws IOException, URISyntaxException {
@@ -87,31 +92,79 @@ public class LanguageServer
     return builder.start();
   }
 
+  Kind2Result callKind2(String program, String[] options) {
+    Kind2Api api = new Kind2Api();
+    api.setArgs(Arrays.asList(options));
+    return api.execute(program);
+  }
+
+  Diagnostic logToDiagnostic(Kind2Log log) {
+    DiagnosticSeverity ds;
+    switch (log.getLevel()) {
+      case error:
+      case fatal:
+        ds = DiagnosticSeverity.Error;
+        break;
+      case info:
+      case note:
+        ds = DiagnosticSeverity.Information;
+        break;
+      case warn:
+        ds = DiagnosticSeverity.Warning;
+        break;
+      case off:
+      case trace:
+      case debug:
+      default:
+        ds = null;
+        break;
+    }
+
+    if (log.getLine() != null) {
+      return new Diagnostic(
+          new Range(
+              new Position(Integer.parseInt(log.getLine()) - 1, Integer.parseInt(log.getColumn())),
+              new Position(Integer.parseInt(log.getLine()), 0)),
+          log.getValue(), ds, "Kind 2: " + log.getSource());
+    }
+    return new Diagnostic(new Range(new Position(0, 0), new Position(0, 0)), log.getValue(), ds,
+        "Kind 2: " + log.getSource());
+  }
+
   /**
    * Call Kind 2 to parse a lustre file and check for syntax errors.
    *
    * @param uri the uri of the lustre file to parse.
    */
   void parse(String uri) {
+    // client.logMessage(new MessageParams(MessageType.Info, "parsing..."));
+    // client.logMessage(new MessageParams(MessageType.Info, "Here1"));
+    Kind2Result result = null;
+
+    // ignore exceptions from syntax errors
     try {
-      client.logMessage(new MessageParams(MessageType.Info, "parsing..."));
-      process =
-          createKind2Process(new String[] {"-json", "--color", "false", "--only_parse", "true"});
-
-      process.getOutputStream().write(getText(uri).getBytes());
-      process.getOutputStream().close();
-
-      List<Diagnostic> diagnostics = new ArrayList<>();
-      diagnostics.add(new Diagnostic(new Range(new Position(0, 0), new Position(0, 0)),
-          new String(process.getInputStream().readAllBytes()), DiagnosticSeverity.Information,
-          "Kind 2"));
-
-      client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
-
+      result =
+          callKind2(getText(uri), new String[] {"-json", "--only_parse", "true", "--lsp", "true"});
     } catch (IOException | URISyntaxException e) {
       throw new ResponseErrorException(
           new ResponseError(ResponseErrorCode.ParseError, e.getMessage(), e));
     }
+    // client.logMessage(new MessageParams(MessageType.Info, "2"));
+
+    List<Diagnostic> diagnostics = new ArrayList<>();
+
+    for (var log : result.getKind2Logs()) {
+      if (log.getLevel() == Kind2LogLevel.note) {
+        components.put(log.getValue(),
+            new Position(Integer.parseInt(log.getLine()) - 1, Integer.parseInt(log.getColumn())));
+      }
+        diagnostics.add(logToDiagnostic(log));
+      
+    }
+    // client.logMessage(new MessageParams(MessageType.Info, "Here3"));
+
+    client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
+    // client.logMessage(new MessageParams(MessageType.Info, "Here4"));
   }
 
   @Override
@@ -234,7 +287,7 @@ public class LanguageServer
             int lineNum = 0;
 
             ArrayList<CodeLens> lens = new ArrayList<CodeLens>();
-            Pattern pattern = Pattern.compile("\n|(function\\s+|node\\s+)(?!imported)");
+            /*Pattern pattern = Pattern.compile("\n|(function\\s+|node\\s+)(?!imported)");
             Matcher matcher = pattern.matcher(text);
             while (matcher.find()) {
               if (text.charAt(matcher.start()) == '\n') {
@@ -251,9 +304,17 @@ public class LanguageServer
                 lens.add(new CodeLens(new Range(new Position(lineNum, 0), new Position(lineNum, 0)),
                     new Command("check", "kind2/check", args), null));
               }
+            }*/
+            threads.awaitTermination(1000, TimeUnit.MILLISECONDS);
+            for (Map.Entry<String, Position> e : components.entrySet()) {
+              ArrayList<Object> args = new ArrayList<Object>();
+              args.add(params.getTextDocument().getUri());
+              args.add(e.getKey());
+              lens.add(new CodeLens(new Range(e.getValue(), e.getValue()),
+                  new Command("check", "kind2/check", args), null));
             }
             return lens;
-          } catch (IOException | URISyntaxException e) {
+          } catch (IOException | URISyntaxException | InterruptedException e) {
             throw new ResponseErrorException(new ResponseError(ResponseErrorCode.InvalidParams,
                 Arrays.toString(e.getStackTrace()), e));
           }
