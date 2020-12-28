@@ -1,7 +1,6 @@
 package edu.uiowa.kind2.lsp;
 
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -33,13 +32,14 @@ import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError;
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode;
 import org.eclipse.lsp4j.jsonrpc.services.JsonNotification;
+import org.eclipse.lsp4j.jsonrpc.services.JsonRequest;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.LanguageClientAware;
 import org.eclipse.lsp4j.services.TextDocumentService;
 import org.eclipse.lsp4j.services.WorkspaceService;
 import edu.uiowa.kind2.api.Kind2Api;
+import edu.uiowa.kind2.results.AstInfo;
 import edu.uiowa.kind2.results.Kind2Log;
-import edu.uiowa.kind2.results.Kind2LogLevel;
 import edu.uiowa.kind2.results.Kind2Result;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
@@ -62,7 +62,7 @@ public class LanguageServer
   private LanguageClient client;
   private Map<String, String> openDocuments;
   private ExecutorService threads;
-  private Map<String, Position> components;
+  private List<CodeLens> components;
 
   public LanguageServer() {
     process = null;
@@ -70,7 +70,7 @@ public class LanguageServer
     client = null;
     threads = Executors.newSingleThreadExecutor();
     openDocuments = new HashMap<>();
-    components = new HashMap<>();
+    components = new ArrayList<>();
   }
 
   public String getText(String uri) throws IOException, URISyntaxException {
@@ -140,11 +140,12 @@ public class LanguageServer
     // client.logMessage(new MessageParams(MessageType.Info, "parsing..."));
     // client.logMessage(new MessageParams(MessageType.Info, "Here1"));
     Kind2Result result = null;
+    components = new ArrayList<>();
 
     // ignore exceptions from syntax errors
     try {
-      result =
-          callKind2(getText(uri), new String[] {"-json", "--only_parse", "true", "--lsp", "true"});
+      result = callKind2(getText(uri),
+          new String[] {"-json", "--no_tc", "false", "--only_parse", "true", "--lsp", "true"});
     } catch (IOException | URISyntaxException e) {
       throw new ResponseErrorException(
           new ResponseError(ResponseErrorCode.ParseError, e.getMessage(), e));
@@ -153,14 +154,20 @@ public class LanguageServer
 
     List<Diagnostic> diagnostics = new ArrayList<>();
 
-    for (var log : result.getKind2Logs()) {
-      if (log.getLevel() == Kind2LogLevel.note) {
-        components.put(log.getValue(),
-            new Position(Integer.parseInt(log.getLine()) - 1, Integer.parseInt(log.getColumn())));
-      }
-        diagnostics.add(logToDiagnostic(log));
-      
+    for (Kind2Log log : result.getKind2Logs()) {
+      diagnostics.add(logToDiagnostic(log));
     }
+
+    for (AstInfo info : result.getAstInfos()) {
+      ArrayList<Object> args = new ArrayList<Object>();
+      args.add(uri);
+      args.add(info.getName());
+      Position position =
+          new Position(Integer.parseInt(info.getLine()) - 1, Integer.parseInt(info.getColumn()));
+      components.add(new CodeLens(new Range(position, position),
+          new Command(info.getName(), "kind2/check", args), null));
+    }
+
     // client.logMessage(new MessageParams(MessageType.Info, "Here3"));
 
     client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
@@ -188,6 +195,40 @@ public class LanguageServer
   @Override
   public void initialized(InitializedParams params) {
     client.logMessage(new MessageParams(MessageType.Info, "Server initialized."));
+  }
+
+  /**
+   * @return the components
+   */
+  @JsonRequest(value = "kind2/getComponents", useSegment = false)
+  public CompletableFuture<List<CodeLens>> getComponents() {
+    return CompletableFuture.supplyAsync(() -> {
+      return components;
+    });
+  }
+
+  @JsonRequest(value = "kind2/check2", useSegment = false)
+  public CompletableFuture<Kind2Result> check2(String uri, String name) {
+    return CompletableFuture.supplyAsync(() -> {
+      client.logMessage(
+          new MessageParams(MessageType.Info, "Checking component " + name + " in " + uri + "..."));
+
+      String[] newOptions = options.toArray(new String[options.size() + 3]);
+
+      newOptions[newOptions.length - 3] = "-json";
+      newOptions[newOptions.length - 2] = "--lus_main";
+      newOptions[newOptions.length - 1] = name;
+
+      // TODO: remove null and IllegalArgumentException
+      Kind2Result result = null;
+      try {
+        result = callKind2(getText(uri), newOptions);
+      } catch (Exception e) {
+        //throw new ResponseErrorException(
+        //    new ResponseError(ResponseErrorCode.InternalError, e.getMessage(), e));
+      }
+      return result;
+    });
   }
 
   @JsonNotification(value = "kind2/check", useSegment = false)
@@ -282,42 +323,7 @@ public class LanguageServer
       @Override
       public CompletableFuture<List<? extends CodeLens>> codeLens(CodeLensParams params) {
         return CompletableFuture.supplyAsync(() -> {
-          try {
-            String text = getText(params.getTextDocument().getUri());
-            int lineNum = 0;
-
-            ArrayList<CodeLens> lens = new ArrayList<CodeLens>();
-            /*Pattern pattern = Pattern.compile("\n|(function\\s+|node\\s+)(?!imported)");
-            Matcher matcher = pattern.matcher(text);
-            while (matcher.find()) {
-              if (text.charAt(matcher.start()) == '\n') {
-                lineNum++;
-              } else {
-                int start = matcher.end();
-                int end = matcher.end();
-                while (Character.isLetterOrDigit(text.charAt(end)) || text.charAt(end) == '_') {
-                  end++;
-                }
-                ArrayList<Object> args = new ArrayList<Object>();
-                args.add(params.getTextDocument().getUri());
-                args.add(text.substring(start, end));
-                lens.add(new CodeLens(new Range(new Position(lineNum, 0), new Position(lineNum, 0)),
-                    new Command("check", "kind2/check", args), null));
-              }
-            }*/
-            threads.awaitTermination(1000, TimeUnit.MILLISECONDS);
-            for (Map.Entry<String, Position> e : components.entrySet()) {
-              ArrayList<Object> args = new ArrayList<Object>();
-              args.add(params.getTextDocument().getUri());
-              args.add(e.getKey());
-              lens.add(new CodeLens(new Range(e.getValue(), e.getValue()),
-                  new Command("check", "kind2/check", args), null));
-            }
-            return lens;
-          } catch (IOException | URISyntaxException | InterruptedException e) {
-            throw new ResponseErrorException(new ResponseError(ResponseErrorCode.InvalidParams,
-                Arrays.toString(e.getStackTrace()), e));
-          }
+          return components;
         });
       }
     };
