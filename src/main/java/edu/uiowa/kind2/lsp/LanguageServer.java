@@ -1,6 +1,5 @@
 package edu.uiowa.kind2.lsp;
 
-import java.util.concurrent.Executors;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -9,10 +8,19 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import org.eclipse.lsp4j.CodeLens;
+import org.eclipse.lsp4j.CodeLensOptions;
+import org.eclipse.lsp4j.CodeLensParams;
+import org.eclipse.lsp4j.Command;
+import org.eclipse.lsp4j.Diagnostic;
+import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.DidChangeConfigurationParams;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidChangeWatchedFilesParams;
@@ -21,8 +29,11 @@ import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.DidSaveTextDocumentParams;
 import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializeResult;
+import org.eclipse.lsp4j.InitializedParams;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.MessageType;
+import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.SaveOptions;
 import org.eclipse.lsp4j.ServerCapabilities;
@@ -37,19 +48,11 @@ import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.LanguageClientAware;
 import org.eclipse.lsp4j.services.TextDocumentService;
 import org.eclipse.lsp4j.services.WorkspaceService;
-import edu.uiowa.kind2.api.Kind2Api;
-import edu.uiowa.kind2.results.AstInfo;
-import edu.uiowa.kind2.results.Kind2Log;
-import edu.uiowa.kind2.results.Kind2Result;
-import org.eclipse.lsp4j.Position;
-import org.eclipse.lsp4j.PublishDiagnosticsParams;
-import org.eclipse.lsp4j.CodeLens;
-import org.eclipse.lsp4j.CodeLensOptions;
-import org.eclipse.lsp4j.CodeLensParams;
-import org.eclipse.lsp4j.Command;
-import org.eclipse.lsp4j.Diagnostic;
-import org.eclipse.lsp4j.DiagnosticSeverity;
-import org.eclipse.lsp4j.InitializedParams;
+import edu.uiowa.cs.clc.kind2.api.Kind2Api;
+import edu.uiowa.cs.clc.kind2.results.AstInfo;
+import edu.uiowa.cs.clc.kind2.results.Log;
+import edu.uiowa.cs.clc.kind2.results.Property;
+import edu.uiowa.cs.clc.kind2.results.Result;
 
 /**
  * LanguageServer
@@ -63,6 +66,7 @@ public class LanguageServer
   private Map<String, String> openDocuments;
   private ExecutorService threads;
   private List<CodeLens> components;
+  private Result result;
 
   public LanguageServer() {
     process = null;
@@ -92,13 +96,19 @@ public class LanguageServer
     return builder.start();
   }
 
-  Kind2Result callKind2(String program, String[] options) {
+  Result callKind2(String program, String[] options) {
     Kind2Api api = new Kind2Api();
     api.setArgs(Arrays.asList(options));
     return api.execute(program);
   }
 
-  Diagnostic logToDiagnostic(Kind2Log log) {
+  Result callKind2(URI uri, String[] options) throws IOException, URISyntaxException {
+    Kind2Api api = new Kind2Api();
+    api.setArgs(Arrays.asList(options));
+    return api.execute(getText(uri.toString()));
+  }
+
+  Diagnostic logToDiagnostic(Log log) {
     DiagnosticSeverity ds;
     switch (log.getLevel()) {
       case error:
@@ -139,7 +149,7 @@ public class LanguageServer
   void parse(String uri) {
     // client.logMessage(new MessageParams(MessageType.Info, "parsing..."));
     // client.logMessage(new MessageParams(MessageType.Info, "Here1"));
-    Kind2Result result = null;
+    Result result = null;
     components = new ArrayList<>();
 
     // ignore exceptions from syntax errors
@@ -154,7 +164,7 @@ public class LanguageServer
 
     List<Diagnostic> diagnostics = new ArrayList<>();
 
-    for (Kind2Log log : result.getKind2Logs()) {
+    for (Log log : result.getKind2Logs()) {
       diagnostics.add(logToDiagnostic(log));
     }
 
@@ -208,7 +218,7 @@ public class LanguageServer
   }
 
   @JsonRequest(value = "kind2/check2", useSegment = false)
-  public CompletableFuture<Kind2Result> check2(String uri, String name) {
+  public CompletableFuture<Set<Property>> check2(String uri, String name) {
     return CompletableFuture.supplyAsync(() -> {
       client.logMessage(
           new MessageParams(MessageType.Info, "Checking component " + name + " in " + uri + "..."));
@@ -219,15 +229,17 @@ public class LanguageServer
       newOptions[newOptions.length - 2] = "--lus_main";
       newOptions[newOptions.length - 1] = name;
 
-      // TODO: remove null and IllegalArgumentException
-      Kind2Result result = null;
       try {
-        result = callKind2(getText(uri), newOptions);
+        result = callKind2(new URI(uri), newOptions);
       } catch (Exception e) {
-        //throw new ResponseErrorException(
-        //    new ResponseError(ResponseErrorCode.InternalError, e.getMessage(), e));
+        throw new ResponseErrorException(
+            new ResponseError(ResponseErrorCode.InternalError, e.getMessage(), e));
       }
-      return result;
+      Set<Property> properties = new HashSet<>();
+      properties.addAll(result.getValidProperties());
+      properties.addAll(result.getFalsifiedProperties());
+      properties.addAll(result.getUnknownProperties());
+      return properties;
     });
   }
 
@@ -259,6 +271,21 @@ public class LanguageServer
         throw new ResponseErrorException(
             new ResponseError(ResponseErrorCode.InternalError, e.getMessage(), e));
       }
+    });
+  }
+
+  @JsonNotification(value = "kind2/counterExample", useSegment = false)
+  public CompletableFuture<String> counterExample(String name) {
+    return CompletableFuture.supplyAsync(() -> {
+      if (result == null) {
+        return null;
+      }
+      for (var prop : result.getFalsifiedProperties()) {
+        if (prop.getJsonName() == name) {
+          return prop.getCounterExample().getJson();
+        }
+      }
+      return null;
     });
   }
 
