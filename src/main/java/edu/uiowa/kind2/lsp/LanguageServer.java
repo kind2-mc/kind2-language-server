@@ -1,5 +1,6 @@
 package edu.uiowa.kind2.lsp;
 
+import java.io.File;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -15,10 +16,8 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import org.eclipse.lsp4j.CodeLens;
-import org.eclipse.lsp4j.CodeLensOptions;
-import org.eclipse.lsp4j.CodeLensParams;
-import org.eclipse.lsp4j.Command;
+import java.util.stream.Collectors;
+
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.DidChangeConfigurationParams;
@@ -40,6 +39,7 @@ import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.SaveOptions;
 import org.eclipse.lsp4j.ServerCapabilities;
 import org.eclipse.lsp4j.SymbolInformation;
+import org.eclipse.lsp4j.SymbolKind;
 import org.eclipse.lsp4j.TextDocumentSyncKind;
 import org.eclipse.lsp4j.TextDocumentSyncOptions;
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
@@ -55,22 +55,20 @@ import org.eclipse.lsp4j.services.WorkspaceService;
 import edu.uiowa.cs.clc.kind2.api.Kind2Api;
 import edu.uiowa.cs.clc.kind2.results.AstInfo;
 import edu.uiowa.cs.clc.kind2.results.Log;
-import edu.uiowa.cs.clc.kind2.results.Property;
 import edu.uiowa.cs.clc.kind2.results.Result;
 
 /**
  * LanguageServer
  */
-public class LanguageServer
-    implements org.eclipse.lsp4j.services.LanguageServer, LanguageClientAware {
+public class LanguageServer implements org.eclipse.lsp4j.services.LanguageServer, LanguageClientAware {
 
   private Process process;
   private List<String> options;
   private LanguageClient client;
   private Map<String, String> openDocuments;
   private ExecutorService threads;
-  private List<CodeLens> components;
-  private Result result;
+  private Map<String, Result> parseResults;
+  private Map<String, Result> analysisResults;
 
   public LanguageServer() {
     process = null;
@@ -78,7 +76,8 @@ public class LanguageServer
     client = null;
     threads = Executors.newSingleThreadExecutor();
     openDocuments = new HashMap<>();
-    components = new ArrayList<>();
+    parseResults = new HashMap<>();
+    analysisResults = new HashMap<>();
   }
 
   public String getText(String uri) throws IOException, URISyntaxException {
@@ -109,35 +108,34 @@ public class LanguageServer
   Result callKind2(URI uri, String[] options) throws IOException, URISyntaxException {
     Kind2Api api = new Kind2Api();
     api.setArgs(Arrays.asList(options));
-    return api.execute(getText(uri.toString()));
+    return api.execute(new File(uri));
   }
 
   Diagnostic logToDiagnostic(Log log) {
     DiagnosticSeverity ds;
     switch (log.getLevel()) {
-      case error:
-      case fatal:
-        ds = DiagnosticSeverity.Error;
-        break;
-      case info:
-      case note:
-        ds = DiagnosticSeverity.Information;
-        break;
-      case warn:
-        ds = DiagnosticSeverity.Warning;
-        break;
-      case off:
-      case trace:
-      case debug:
-      default:
-        ds = null;
-        break;
+    case error:
+    case fatal:
+      ds = DiagnosticSeverity.Error;
+      break;
+    case info:
+    case note:
+      ds = DiagnosticSeverity.Information;
+      break;
+    case warn:
+      ds = DiagnosticSeverity.Warning;
+      break;
+    case off:
+    case trace:
+    case debug:
+    default:
+      ds = null;
+      break;
     }
 
     if (log.getLine() != null) {
       return new Diagnostic(
-          new Range(
-              new Position(Integer.parseInt(log.getLine()) - 1, Integer.parseInt(log.getColumn())),
+          new Range(new Position(Integer.parseInt(log.getLine()) - 1, Integer.parseInt(log.getColumn())),
               new Position(Integer.parseInt(log.getLine()), 0)),
           log.getValue(), ds, "Kind 2: " + log.getSource());
     }
@@ -153,33 +151,20 @@ public class LanguageServer
   void parse(String uri) {
     // client.logMessage(new MessageParams(MessageType.Info, "parsing..."));
     // client.logMessage(new MessageParams(MessageType.Info, "Here1"));
-    Result result = null;
-    components = new ArrayList<>();
 
     // ignore exceptions from syntax errors
     try {
-      result = callKind2(getText(uri),
-          new String[] {"-json", "--no_tc", "false", "--only_parse", "true", "--lsp", "true"});
+      parseResults.put(uri, callKind2(getText(uri),
+          new String[] { "-json", "--no_tc", "false", "--only_parse", "true", "--lsp", "true" }));
     } catch (IOException | URISyntaxException e) {
-      throw new ResponseErrorException(
-          new ResponseError(ResponseErrorCode.ParseError, e.getMessage(), e));
+      throw new ResponseErrorException(new ResponseError(ResponseErrorCode.ParseError, e.getMessage(), e));
     }
     // client.logMessage(new MessageParams(MessageType.Info, "2"));
 
     List<Diagnostic> diagnostics = new ArrayList<>();
 
-    for (Log log : result.getKind2Logs()) {
+    for (Log log : parseResults.get(uri).getKind2Logs()) {
       diagnostics.add(logToDiagnostic(log));
-    }
-
-    for (AstInfo info : result.getAstInfos()) {
-      ArrayList<Object> args = new ArrayList<Object>();
-      args.add(uri);
-      args.add(info.getName());
-      Position position =
-          new Position(Integer.parseInt(info.getLine()) - 1, Integer.parseInt(info.getColumn()));
-      components.add(new CodeLens(new Range(position, position),
-          new Command(info.getName(), "kind2/check", args), null));
     }
 
     // client.logMessage(new MessageParams(MessageType.Info, "Here3"));
@@ -201,7 +186,7 @@ public class LanguageServer
       syncOptions.setChange(TextDocumentSyncKind.Full);
       syncOptions.setSave(new SaveOptions(true));
       sCapabilities.setTextDocumentSync(syncOptions);
-      sCapabilities.setCodeLensProvider(new CodeLensOptions(true));
+      sCapabilities.setDocumentSymbolProvider(true);
       return new InitializeResult(sCapabilities);
     });
   }
@@ -215,17 +200,22 @@ public class LanguageServer
    * @return the components
    */
   @JsonRequest(value = "kind2/getComponents", useSegment = false)
-  public CompletableFuture<List<CodeLens>> getComponents() {
+  public CompletableFuture<List<String>> getComponents(String uri) {
     return CompletableFuture.supplyAsync(() -> {
+      List<String> components = new ArrayList<>();
+      if (parseResults.containsKey(uri)) {
+        for (AstInfo info : parseResults.get(uri).getAstInfos()) {
+          components.add(info.getJson());
+        }
+      }
       return components;
     });
   }
 
-  @JsonRequest(value = "kind2/check2", useSegment = false)
-  public CompletableFuture<Set<Property>> check2(String uri, String name) {
+  @JsonRequest(value = "kind2/check", useSegment = false)
+  public CompletableFuture<Set<String>> check(String uri, String name) {
     return CompletableFuture.supplyAsync(() -> {
-      client.logMessage(
-          new MessageParams(MessageType.Info, "Checking component " + name + " in " + uri + "..."));
+      client.logMessage(new MessageParams(MessageType.Info, "Checking component " + name + " in " + uri + "..."));
 
       String[] newOptions = options.toArray(new String[options.size() + 3]);
 
@@ -234,25 +224,26 @@ public class LanguageServer
       newOptions[newOptions.length - 1] = name;
 
       try {
-        result = callKind2(new URI(uri), newOptions);
+        analysisResults.put(uri, callKind2(new URI(uri), newOptions));
       } catch (Exception e) {
-        throw new ResponseErrorException(
-            new ResponseError(ResponseErrorCode.InternalError, e.getMessage(), e));
+        throw new ResponseErrorException(new ResponseError(ResponseErrorCode.InternalError, e.getMessage(), e));
       }
-      Set<Property> properties = new HashSet<>();
-      properties.addAll(result.getValidProperties());
-      properties.addAll(result.getFalsifiedProperties());
-      properties.addAll(result.getUnknownProperties());
+      Set<String> properties = new HashSet<>();
+      properties.addAll(
+          analysisResults.get(uri).getValidProperties().stream().map(p -> p.getJson()).collect(Collectors.toSet()));
+      properties.addAll(
+          analysisResults.get(uri).getFalsifiedProperties().stream().map(p -> p.getJson()).collect(Collectors.toSet()));
+      properties.addAll(
+          analysisResults.get(uri).getUnknownProperties().stream().map(p -> p.getJson()).collect(Collectors.toSet()));
       return properties;
     });
   }
 
-  @JsonNotification(value = "kind2/check", useSegment = false)
-  public void check(String uri, String name) {
+  @JsonNotification(value = "kind2/raw", useSegment = false)
+  public void raw(String uri, String name) {
     threads.submit(() -> {
       try {
-        client.logMessage(new MessageParams(MessageType.Info,
-            "Checking component " + name + " in " + uri + "..."));
+        client.logMessage(new MessageParams(MessageType.Info, "Checking component " + name + " in " + uri + "..."));
 
         String[] newOptions = options.toArray(new String[options.size() + 4]);
 
@@ -266,30 +257,39 @@ public class LanguageServer
 
         List<Diagnostic> diagnostics = new ArrayList<>();
         diagnostics.add(new Diagnostic(new Range(new Position(0, 0), new Position(0, 0)),
-            new String(process.getInputStream().readAllBytes()), DiagnosticSeverity.Information,
-            "Kind 2"));
+            new String(process.getInputStream().readAllBytes()), DiagnosticSeverity.Information, "Kind 2"));
 
         client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
       } catch (IOException | URISyntaxException e) {
         e.printStackTrace();
-        throw new ResponseErrorException(
-            new ResponseError(ResponseErrorCode.InternalError, e.getMessage(), e));
+        throw new ResponseErrorException(new ResponseError(ResponseErrorCode.InternalError, e.getMessage(), e));
       }
     });
   }
 
-  @JsonNotification(value = "kind2/counterExample", useSegment = false)
-  public CompletableFuture<String> counterExample(String name) {
+  @JsonRequest(value = "kind2/counterExample", useSegment = false)
+  public CompletableFuture<String> counterExample(String uri, String name) {
     return CompletableFuture.supplyAsync(() -> {
-      if (result == null) {
+      if (!analysisResults.containsKey(uri)) {
         return null;
       }
-      for (var prop : result.getFalsifiedProperties()) {
-        if (prop.getJsonName() == name) {
+      for (var prop : analysisResults.get(uri).getFalsifiedProperties()) {
+        if (prop.getJsonName().equals(name)) {
           return prop.getCounterExample().getJson();
         }
       }
       return null;
+    });
+  }
+
+  @JsonRequest(value = "kind2/interpret", useSegment = false)
+  public CompletableFuture<String> interpret(String uri, String main, String json) {
+    return CompletableFuture.supplyAsync(() -> {
+      try {
+        return new Kind2Api().interpret(new URI(uri), main, json);
+      } catch (URISyntaxException e) {
+        throw new ResponseErrorException(new ResponseError(ResponseErrorCode.InternalError, e.getMessage(), e));
+      }
     });
   }
 
@@ -309,15 +309,15 @@ public class LanguageServer
         return 0;
       } catch (InterruptedException e) {
         e.printStackTrace();
-        throw new ResponseErrorException(
-            new ResponseError(ResponseErrorCode.InternalError, e.getMessage(), e));
+        throw new ResponseErrorException(new ResponseError(ResponseErrorCode.InternalError, e.getMessage(), e));
       }
     });
   }
 
   @Override
   public void exit() {
-    // If kind2 is still alive after shutdown, destroy it forcibly and return an error code
+    // If kind2 is still alive after shutdown, destroy it forcibly and return an
+    // error code
     if (process.isAlive()) {
       process.destroyForcibly();
       // TODO: exit with an error code
@@ -330,14 +330,13 @@ public class LanguageServer
       @Override
       public void didOpen(DidOpenTextDocumentParams params) {
         openDocuments.put(params.getTextDocument().getUri(), params.getTextDocument().getText());
-        threads.submit(() -> parse(params.getTextDocument().getUri()));
+        parse(params.getTextDocument().getUri());
       }
 
       @Override
       public void didChange(DidChangeTextDocumentParams params) {
-        openDocuments.replace(params.getTextDocument().getUri(),
-            params.getContentChanges().get(0).getText());
-        threads.submit(() -> parse(params.getTextDocument().getUri()));
+        openDocuments.replace(params.getTextDocument().getUri(), params.getContentChanges().get(0).getText());
+        parse(params.getTextDocument().getUri());
       }
 
       @Override
@@ -348,20 +347,26 @@ public class LanguageServer
       @Override
       public void didSave(DidSaveTextDocumentParams params) {
         openDocuments.replace(params.getTextDocument().getUri(), params.getText());
-        threads.submit(() -> parse(params.getTextDocument().getUri()));
+        parse(params.getTextDocument().getUri());
       }
 
       @Override
-      public CompletableFuture<List<? extends CodeLens>> codeLens(CodeLensParams params) {
+      public CompletableFuture<List<Either<SymbolInformation, DocumentSymbol>>> documentSymbol(
+          DocumentSymbolParams params) {
         return CompletableFuture.supplyAsync(() -> {
-          return components;
-        });
-      }
-
-      @Override
-      public CompletableFuture<List<Either<SymbolInformation, DocumentSymbol>>> documentSymbol(DocumentSymbolParams params) {
-        return CompletableFuture.supplyAsync(() -> {
-          return null;
+          String uri = params.getTextDocument().getUri();
+          List<Either<SymbolInformation, DocumentSymbol>> symbols = new ArrayList<>();
+          if (parseResults.containsKey(uri)) {
+            for (AstInfo info : parseResults.get(uri).getAstInfos()) {
+              Position startPos = new Position(Integer.parseInt(info.getStartLine()) - 1,
+                  Integer.parseInt(info.getStartColumn()));
+              Position endPos = new Position(Integer.parseInt(info.getEndLine()) - 1,
+                  Integer.parseInt(info.getEndColumn()));
+              Range range = new Range(startPos, endPos);
+              symbols.add(Either.forRight(new DocumentSymbol(info.getName(), SymbolKind.Function, range, range)));
+            }
+          }
+          return symbols;
         });
       }
     };
