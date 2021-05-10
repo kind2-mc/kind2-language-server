@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 public class LanguageServerTest implements LanguageClient {
   @Test
   void simpleTest() {
-    LanguageServer s = new LanguageServer();
+    Kind2LanguageServer s = new Kind2LanguageServer();
 
     try {
       InitializeParams params = new InitializeParams();
