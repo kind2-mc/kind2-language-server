@@ -3,10 +3,10 @@ package edu.uiowa.kind2.lsp;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
 import org.eclipse.lsp4j.Diagnostic;
@@ -53,19 +54,26 @@ import org.eclipse.lsp4j.services.WorkspaceService;
 import edu.uiowa.cs.clc.kind2.Kind2Exception;
 import edu.uiowa.cs.clc.kind2.api.Kind2Api;
 import edu.uiowa.cs.clc.kind2.results.AstInfo;
+import edu.uiowa.cs.clc.kind2.results.ConstDeclInfo;
+import edu.uiowa.cs.clc.kind2.results.ContractInfo;
+import edu.uiowa.cs.clc.kind2.results.FunctionInfo;
 import edu.uiowa.cs.clc.kind2.results.Log;
+import edu.uiowa.cs.clc.kind2.results.NodeInfo;
+import edu.uiowa.cs.clc.kind2.results.Property;
 import edu.uiowa.cs.clc.kind2.results.Result;
+import edu.uiowa.cs.clc.kind2.results.TypeDeclInfo;
 
 /**
  * LanguageServer
  */
 public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageServer, LanguageClientAware {
 
+  private static final int URI_PREFIX_LENGTH = "file://".length();
   private List<String> options;
   private Kind2LanguageClient client;
   private Map<String, String> openDocuments;
   private Map<String, Result> parseResults;
-  private Map<String, Result> analysisResults;
+  private Map<String, Map<String, Result>> analysisResults;
 
   public Kind2LanguageServer() {
     options = new ArrayList<>();
@@ -83,11 +91,21 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
   }
 
   Result callKind2(String uri, List<String> options) throws Kind2Exception, IOException, URISyntaxException {
-    Kind2Api api = new Kind2Api();
-    options.add("--include_dir");
-    options.add(uri.substring(7, uri.lastIndexOf("/")));
-    api.setArgs(options);
-    return api.execute(getText(uri));
+    try {
+      Kind2Api.KIND2 = client.getKind2Path().get();
+      Kind2Api api = new Kind2Api();
+      // Since we're using `stdin` to pass the program, `kind2` does not know
+      // where the file containing the program is located. So, we need to add
+      // the file's directory to the list of includes.
+      options.add("--include_dir");
+      options.add(uri.substring(7, uri.lastIndexOf("/")));
+      options.add(client.getSmtSolverOption().get());
+      options.add(client.getSmtSolverPath().get());
+      api.setArgs(options);
+      return api.execute(getText(uri));
+    } catch (InterruptedException | ExecutionException e) {
+      throw new ResponseErrorException(new ResponseError(ResponseErrorCode.ParseError, e.getMessage(), e));
+    }
   }
 
   Diagnostic logToDiagnostic(Log log) {
@@ -154,9 +172,6 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
   public CompletableFuture<InitializeResult> initialize(InitializeParams params) {
     return CompletableFuture.supplyAsync(() -> {
       client.logMessage(new MessageParams(MessageType.Info, "Initializing server..."));
-      if (params.getInitializationOptions() != null) {
-        options.addAll(Arrays.asList((String[]) params.getInitializationOptions()));
-      }
       ServerCapabilities sCapabilities = new ServerCapabilities();
       TextDocumentSyncOptions syncOptions = new TextDocumentSyncOptions();
       syncOptions.setOpenClose(true);
@@ -173,6 +188,20 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
     client.logMessage(new MessageParams(MessageType.Info, "Server initialized."));
   }
 
+  private String updateUri(String json, String uri) {
+    uri = FileSystems.getDefault().getPath(uri.substring(URI_PREFIX_LENGTH)).normalize().toAbsolutePath().toUri()
+        .toString();
+    if (json.contains("\"file\":")) {
+      int l = json.indexOf("\"file\":");
+      int r = json.indexOf('\"', l + 9) + 1;
+      if (json.charAt(r) == ',') {
+        r += 1;
+      }
+      json = json.replace(json.substring(l, r), "");
+    }
+    return json.substring(0, json.length() - 2) + ",\"file\": \"" + uri + "\"}";
+  }
+
   /**
    * @return the components
    */
@@ -181,10 +210,12 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
     return CompletableFuture.supplyAsync(() -> {
       List<String> components = new ArrayList<>();
       if (parseResults.containsKey(uri)) {
-        String path = uri.substring(7);
         for (AstInfo info : parseResults.get(uri).getAstInfos()) {
-          if (info.getFile().equals("")) {
-            components.add(info.getJson().replace("\"file\": \"\"", "\"file\": \"" + path + "\""));
+          if (info instanceof NodeInfo && !((NodeInfo) info).isImported()
+              || info instanceof FunctionInfo && !((FunctionInfo) info).isImported()) {
+            if (info.getFile() == null) {
+              components.add(updateUri(info.getJson(), uri));
+            }
           }
         }
       }
@@ -203,34 +234,37 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
       Collections.addAll(newOptions, "-json", "--lus_main", name);
 
       try {
-        analysisResults.put(uri, callKind2(uri, newOptions));
+        analysisResults.put(uri, new HashMap<>());
+        analysisResults.get(uri).put(name, callKind2(uri, newOptions));
       } catch (Exception e) {
         throw new ResponseErrorException(new ResponseError(ResponseErrorCode.InternalError, e.getMessage(), e));
       }
 
-      String path = uri.substring(7);
+      Set<Property> properties = new HashSet<>();
 
-      Set<String> properties = new HashSet<>();
+      properties.addAll(analysisResults.get(uri).get(name).getValidProperties());
+      properties.addAll(analysisResults.get(uri).get(name).getFalsifiedProperties());
+      properties.addAll(analysisResults.get(uri).get(name).getUnknownProperties());
 
-      properties.addAll(analysisResults.get(uri).getValidProperties().stream()
-          .map(p -> p.getJson().replace("\"file\": \"\"", "\"file\": \"" + path + "\"")).collect(Collectors.toSet()));
-      properties.addAll(analysisResults.get(uri).getFalsifiedProperties().stream()
-          .map(p -> p.getJson().replace("\"file\": \"\"", "\"file\": \"" + path + "\"")).collect(Collectors.toSet()));
-      properties.addAll(analysisResults.get(uri).getUnknownProperties().stream()
-          .map(p -> p.getJson().replace("\"file\": \"\"", "\"file\": \"" + path + "\"")).collect(Collectors.toSet()));
+      Set<String> jsons = properties.stream()
+          .map(p -> updateUri(p.getJson(), p.getFile() == null ? uri : "file://" + p.getFile()))
+          .collect(Collectors.toSet());
 
-      return properties;
+      return jsons;
     });
   }
 
   @JsonRequest(value = "kind2/counterExample", useSegment = false)
-  public CompletableFuture<String> counterExample(String uri, String name) {
+  public CompletableFuture<String> counterExample(String uri, String component, String property) {
     return CompletableFuture.supplyAsync(() -> {
       if (!analysisResults.containsKey(uri)) {
         return null;
       }
-      for (var prop : analysisResults.get(uri).getFalsifiedProperties()) {
-        if (prop.getJsonName().equals(name)) {
+      if (!analysisResults.get(uri).containsKey(component)) {
+        return null;
+      }
+      for (var prop : analysisResults.get(uri).get(component).getFalsifiedProperties()) {
+        if (prop.getJsonName().equals(property)) {
           return prop.getCounterExample().getJson();
         }
       }
@@ -267,16 +301,21 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
       public void didOpen(DidOpenTextDocumentParams params) {
         String uri = params.getTextDocument().getUri();
         openDocuments.put(uri, params.getTextDocument().getText());
-        parse(uri);
-        client.updateComponents(uri);
+        CompletableFuture.runAsync(() -> {
+          parse(uri);
+          client.updateComponents(uri);
+        });
       }
 
       @Override
       public void didChange(DidChangeTextDocumentParams params) {
         String uri = params.getTextDocument().getUri();
         openDocuments.replace(uri, params.getContentChanges().get(0).getText());
-        parse(uri);
-        client.updateComponents(uri);
+        analysisResults.remove(uri);
+        CompletableFuture.runAsync(() -> {
+          parse(uri);
+          client.updateComponents(uri);
+        });
       }
 
       @Override
@@ -291,7 +330,6 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
       @Override
       public void didSave(DidSaveTextDocumentParams params) {
         openDocuments.replace(params.getTextDocument().getUri(), params.getText());
-        parse(params.getTextDocument().getUri());
       }
 
       @Override
@@ -307,7 +345,21 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
               Position endPos = new Position(Integer.parseInt(info.getEndLine()) - 1,
                   Integer.parseInt(info.getEndColumn()));
               Range range = new Range(startPos, endPos);
-              symbols.add(Either.forRight(new DocumentSymbol(info.getName(), SymbolKind.Function, range, range)));
+              SymbolKind kind;
+              if (info instanceof TypeDeclInfo) {
+                kind = SymbolKind.Class;
+              } else if (info instanceof ConstDeclInfo) {
+                kind = SymbolKind.Constant;
+              } else if (info instanceof NodeInfo) {
+                kind = SymbolKind.Method;
+              } else if (info instanceof FunctionInfo) {
+                kind = SymbolKind.Function;
+              } else if (info instanceof ContractInfo) {
+                kind = SymbolKind.Interface;
+              } else {
+                kind = null;
+              }
+              symbols.add(Either.forRight(new DocumentSymbol(info.getName(), kind, range, range)));
             }
           }
           return symbols;
