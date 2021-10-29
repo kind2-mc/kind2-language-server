@@ -1,5 +1,6 @@
 package edu.uiowa.kind2.lsp;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 import org.eclipse.lsp4j.jsonrpc.services.JsonNotification;
@@ -24,14 +25,20 @@ interface Kind2LanguageClient extends LanguageClient {
   CompletableFuture<String> getKind2Path();
 
   /**
-   * @return the configured SMT solver option to pass to {@code kind2}
+   * @return the configured SMT solver for {@code kind2} to use.
    */
-  @JsonRequest("kind2/getSmtSolverOption")
-  CompletableFuture<String> getSmtSolverOption();
+  @JsonRequest("kind2/getSmtSolver")
+  CompletableFuture<String> getSmtSolver();
 
   /**
    * @return the configured path to SMT solver
    */
   @JsonRequest("kind2/getSmtSolverPath")
   CompletableFuture<String> getSmtSolverPath();
+
+  /**
+   * @return the configured path to SMT solver
+   */
+  @JsonRequest("kind2/getOptions")
+  CompletableFuture<List<String>> getOptions();
 }

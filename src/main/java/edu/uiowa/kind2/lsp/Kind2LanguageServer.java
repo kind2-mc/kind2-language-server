@@ -41,6 +41,8 @@ import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.SymbolKind;
 import org.eclipse.lsp4j.TextDocumentSyncKind;
 import org.eclipse.lsp4j.TextDocumentSyncOptions;
+import org.eclipse.lsp4j.jsonrpc.CancelChecker;
+import org.eclipse.lsp4j.jsonrpc.CompletableFutures;
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError;
@@ -52,7 +54,9 @@ import org.eclipse.lsp4j.services.TextDocumentService;
 import org.eclipse.lsp4j.services.WorkspaceService;
 
 import edu.uiowa.cs.clc.kind2.Kind2Exception;
+import edu.uiowa.cs.clc.kind2.api.IProgressMonitor;
 import edu.uiowa.cs.clc.kind2.api.Kind2Api;
+import edu.uiowa.cs.clc.kind2.results.LogLevel;
 import edu.uiowa.cs.clc.kind2.results.AstInfo;
 import edu.uiowa.cs.clc.kind2.results.ConstDeclInfo;
 import edu.uiowa.cs.clc.kind2.results.ContractInfo;
@@ -90,7 +94,26 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
     return Files.readString(Paths.get(new URI(uri)));
   }
 
-  Result callKind2(String uri, List<String> options) throws Kind2Exception, IOException, URISyntaxException {
+  String getSmtSolverOption(String solver) {
+    switch (solver) {
+    case "Z3":
+      return "--z3_bin";
+    case "CVC4":
+      return "--cvc4_bin";
+    case "Yices":
+      return "--yices_bin";
+    case "Yices2":
+      return "--yices2_bin";
+    case "Boolector":
+      return "--boolector_bin";
+    case "MathSAT":
+      return "--Mathsat_bin";
+    }
+    return null;
+  }
+
+  Result callKind2(String uri, List<String> options, CancelChecker cancelToken)
+      throws Kind2Exception, IOException, URISyntaxException {
     try {
       Kind2Api.KIND2 = client.getKind2Path().get();
       Kind2Api api = new Kind2Api();
@@ -99,35 +122,67 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
       // the file's directory to the list of includes.
       options.add("--include_dir");
       options.add(uri.substring(7, uri.lastIndexOf("/")));
-      options.add(client.getSmtSolverOption().get());
-      options.add(client.getSmtSolverPath().get());
+      options.add("-json");
+      String solver = client.getSmtSolver().get();
+      options.add("--smt_solver");
+      options.add(solver);
+      String solverPath = client.getSmtSolverPath().get();
+      if (!solverPath.equals("")) {
+        options.add(getSmtSolverOption(solver));
+        options.add(solverPath);
+      }
       api.setArgs(options);
-      return api.execute(getText(uri));
+      Result result = new Result();
+      IProgressMonitor monitor = new IProgressMonitor() {
+        @Override
+        public boolean isCanceled() {
+          return cancelToken == null ? false : cancelToken.isCanceled();
+        }
+
+        @Override
+        public void done() {
+        }
+      };
+      api.execute(getText(uri), result, monitor);
+      return result;
     } catch (InterruptedException | ExecutionException e) {
       throw new ResponseErrorException(new ResponseError(ResponseErrorCode.ParseError, e.getMessage(), e));
+    }
+  }
+
+  void checkLog(String uri, String component) throws ResponseErrorException {
+    for (Log log : analysisResults.get(uri).get(component).getKind2Logs()) {
+      if (log.getLevel() == LogLevel.error || log.getLevel() == LogLevel.fatal) {
+        throw new ResponseErrorException(new ResponseError(ResponseErrorCode.InternalError,
+            "An error occurred while checking the component:\n" + log.getValue(), null));
+      }
     }
   }
 
   Diagnostic logToDiagnostic(Log log) {
     DiagnosticSeverity ds;
     switch (log.getLevel()) {
-      case error:
-      case fatal:
-        ds = DiagnosticSeverity.Error;
-        break;
-      case info:
-      case note:
-        ds = DiagnosticSeverity.Information;
-        break;
-      case warn:
-        ds = DiagnosticSeverity.Warning;
-        break;
-      case off:
-      case trace:
-      case debug:
-      default:
-        ds = null;
-        break;
+    case error:
+    case fatal:
+      ds = DiagnosticSeverity.Error;
+      break;
+    case info:
+      ds = DiagnosticSeverity.Information;
+      break;
+    case warn:
+      ds = DiagnosticSeverity.Warning;
+      break;
+    case note:
+    case off:
+    case trace:
+    case debug:
+    default:
+      ds = null;
+      break;
+    }
+
+    if (ds == null) {
+      return null;
     }
 
     if (log.getLine() != null) {
@@ -152,8 +207,8 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
     try {
       ArrayList<String> newOptions = new ArrayList<>();
       Collections.copy(options, newOptions);
-      Collections.addAll(newOptions, "-json", "--no_tc", "false", "--only_parse", "true", "--lsp", "true");
-      parseResults.put(uri, callKind2(uri, newOptions));
+      Collections.addAll(newOptions, "--old_frontend", "false", "--only_parse", "true", "--lsp", "true");
+      parseResults.put(uri, callKind2(uri, newOptions, null));
     } catch (Kind2Exception | IOException | URISyntaxException e) {
       throw new ResponseErrorException(new ResponseError(ResponseErrorCode.ParseError, e.getMessage(), e));
     }
@@ -161,7 +216,10 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
     List<Diagnostic> diagnostics = new ArrayList<>();
 
     for (Log log : parseResults.get(uri).getKind2Logs()) {
-      diagnostics.add(logToDiagnostic(log));
+      Diagnostic diagnostic = logToDiagnostic(log);
+      if (diagnostic != null) {
+        diagnostics.add(diagnostic);
+      }
     }
 
     client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
@@ -225,20 +283,31 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
 
   @JsonRequest(value = "kind2/check", useSegment = false)
   public CompletableFuture<Set<String>> check(String uri, String name) {
-    return CompletableFuture.supplyAsync(() -> {
+    return CompletableFutures.computeAsync(cancelToken -> {
       client.logMessage(new MessageParams(MessageType.Info, "Checking component " + name + " in " + uri + "..."));
 
       ArrayList<String> newOptions = new ArrayList<String>();
 
       Collections.copy(options, newOptions);
-      Collections.addAll(newOptions, "-json", "--lus_main", name);
+      Collections.addAll(newOptions, "--lus_main", name);
+
+      analysisResults.get(uri).remove(name);
+      Result result = new Result();
 
       try {
-        analysisResults.put(uri, new HashMap<>());
-        analysisResults.get(uri).put(name, callKind2(uri, newOptions));
-      } catch (Exception e) {
+        result = callKind2(uri, newOptions, cancelToken);
+      } catch (Kind2Exception | IOException | URISyntaxException e) {
         throw new ResponseErrorException(new ResponseError(ResponseErrorCode.InternalError, e.getMessage(), e));
       }
+
+      if (cancelToken.isCanceled()) {
+        client.logMessage(new MessageParams(MessageType.Info, "Check cancelled."));
+        // Throw an exception for the launcher to handle.
+        cancelToken.checkCanceled();
+      }
+
+      analysisResults.get(uri).put(name, result);
+      checkLog(uri, name);
 
       Set<Property> properties = new HashSet<>();
 
@@ -263,6 +332,7 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
       if (!analysisResults.get(uri).containsKey(component)) {
         return null;
       }
+      checkLog(uri, component);
       for (var prop : analysisResults.get(uri).get(component).getFalsifiedProperties()) {
         if (prop.getJsonName().equals(property)) {
           return prop.getCounterExample().getJson();
@@ -276,8 +346,20 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
   public CompletableFuture<String> interpret(String uri, String main, String json) {
     return CompletableFuture.supplyAsync(() -> {
       try {
-        return new Kind2Api().interpret(new URI(uri), main, json);
-      } catch (URISyntaxException e) {
+        Kind2Api api = new Kind2Api();
+        Kind2Api.KIND2 = client.getKind2Path().get();
+        String solver = client.getSmtSolver().get();
+        List<String> options = new ArrayList<>();
+        options.add("--smt_solver");
+        options.add(solver);
+        String solverPath = client.getSmtSolverPath().get();
+        if (!solverPath.equals("")) {
+          options.add(getSmtSolverOption(solver));
+          options.add(solverPath);
+        }
+        api.setArgs(options);
+        return api.interpret(new URI(uri), main, json);
+      } catch (URISyntaxException | InterruptedException | ExecutionException e) {
         throw new ResponseErrorException(new ResponseError(ResponseErrorCode.InternalError, e.getMessage(), e));
       }
     });
@@ -301,6 +383,7 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
       public void didOpen(DidOpenTextDocumentParams params) {
         String uri = params.getTextDocument().getUri();
         openDocuments.put(uri, params.getTextDocument().getText());
+        analysisResults.put(uri, new HashMap<>());
         CompletableFuture.runAsync(() -> {
           parse(uri);
           client.updateComponents(uri);
@@ -311,7 +394,7 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
       public void didChange(DidChangeTextDocumentParams params) {
         String uri = params.getTextDocument().getUri();
         openDocuments.replace(uri, params.getContentChanges().get(0).getText());
-        analysisResults.remove(uri);
+        analysisResults.put(uri, new HashMap<>());
         CompletableFuture.runAsync(() -> {
           parse(uri);
           client.updateComponents(uri);
@@ -340,26 +423,28 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
           List<Either<SymbolInformation, DocumentSymbol>> symbols = new ArrayList<>();
           if (parseResults.containsKey(uri)) {
             for (AstInfo info : parseResults.get(uri).getAstInfos()) {
-              Position startPos = new Position(Integer.parseInt(info.getStartLine()) - 1,
-                  Integer.parseInt(info.getStartColumn()));
-              Position endPos = new Position(Integer.parseInt(info.getEndLine()) - 1,
-                  Integer.parseInt(info.getEndColumn()));
-              Range range = new Range(startPos, endPos);
-              SymbolKind kind;
-              if (info instanceof TypeDeclInfo) {
-                kind = SymbolKind.Class;
-              } else if (info instanceof ConstDeclInfo) {
-                kind = SymbolKind.Constant;
-              } else if (info instanceof NodeInfo) {
-                kind = SymbolKind.Method;
-              } else if (info instanceof FunctionInfo) {
-                kind = SymbolKind.Function;
-              } else if (info instanceof ContractInfo) {
-                kind = SymbolKind.Interface;
-              } else {
-                kind = null;
+              if (info.getFile() == null) {
+                Position startPos = new Position(Integer.parseInt(info.getStartLine()) - 1,
+                    Integer.parseInt(info.getStartColumn()));
+                Position endPos = new Position(Integer.parseInt(info.getEndLine()) - 1,
+                    Integer.parseInt(info.getEndColumn()));
+                Range range = new Range(startPos, endPos);
+                SymbolKind kind;
+                if (info instanceof TypeDeclInfo) {
+                  kind = SymbolKind.Class;
+                } else if (info instanceof ConstDeclInfo) {
+                  kind = SymbolKind.Constant;
+                } else if (info instanceof NodeInfo) {
+                  kind = SymbolKind.Method;
+                } else if (info instanceof FunctionInfo) {
+                  kind = SymbolKind.Function;
+                } else if (info instanceof ContractInfo) {
+                  kind = SymbolKind.Interface;
+                } else {
+                  kind = null;
+                }
+                symbols.add(Either.forRight(new DocumentSymbol(info.getName(), kind, range, range)));
               }
-              symbols.add(Either.forRight(new DocumentSymbol(info.getName(), kind, range, range)));
             }
           }
           return symbols;
