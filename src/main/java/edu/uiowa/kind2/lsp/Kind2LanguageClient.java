@@ -1,6 +1,5 @@
 package edu.uiowa.kind2.lsp;
 
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 import org.eclipse.lsp4j.jsonrpc.services.JsonNotification;
@@ -11,7 +10,7 @@ interface Kind2LanguageClient extends LanguageClient {
 
   /**
    * The update components notification is sent from the server to the client to
-   * ask client to update its list of components for a file.
+   * ask the client to update its list of components for a file.
    *
    * @param uri uri of the file to update components for
    */
@@ -19,26 +18,14 @@ interface Kind2LanguageClient extends LanguageClient {
   void updateComponents(String uri);
 
   /**
-   * @return the configured path to {@code kind2} executable
+   * @return the default path to {@code kind2} executable
    */
-  @JsonRequest("kind2/getKind2Path")
-  CompletableFuture<String> getKind2Path();
+  @JsonRequest("kind2/getDefaultKind2Path")
+  CompletableFuture<String> getDefaultKind2Path();
 
   /**
-   * @return the configured SMT solver for {@code kind2} to use.
+   * @return the default path to Z3 SMT solver
    */
-  @JsonRequest("kind2/getSmtSolver")
-  CompletableFuture<String> getSmtSolver();
-
-  /**
-   * @return the configured path to SMT solver
-   */
-  @JsonRequest("kind2/getSmtSolverPath")
-  CompletableFuture<String> getSmtSolverPath();
-
-  /**
-   * @return the configured path to SMT solver
-   */
-  @JsonRequest("kind2/getOptions")
-  CompletableFuture<List<String>> getOptions();
+  @JsonRequest("kind2/getDefaultZ3Path")
+  CompletableFuture<String> getDefaultZ3Path();
 }

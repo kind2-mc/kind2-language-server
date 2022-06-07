@@ -24,7 +24,8 @@ public class LanguageServerTest implements LanguageClient {
     try {
       InitializeParams params = new InitializeParams();
       params.setInitializationOptions(new String[] { "-json" });
-      String program = new String(Files.readAllBytes(Paths.get("files/stopwatch.lus")));
+      String program = new String(
+          Files.readAllBytes(Paths.get("files/stopwatch.lus")));
       // System.out.println(s.check(program).get());
       // s.parse("file:///home/abdoo8080/Research/kind2-lsp/files/stopwatch.lus");
       assertEquals(0, (int) s.shutdown().get());
@@ -53,7 +54,8 @@ public class LanguageServerTest implements LanguageClient {
   }
 
   @Override
-  public CompletableFuture<MessageActionItem> showMessageRequest(ShowMessageRequestParams requestParams) {
+  public CompletableFuture<MessageActionItem> showMessageRequest(
+      ShowMessageRequestParams requestParams) {
     // TODO Auto-generated method stub
     return null;
   }

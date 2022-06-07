@@ -3,20 +3,23 @@ package edu.uiowa.kind2.lsp;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Arrays;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+
+import org.eclipse.lsp4j.ConfigurationItem;
+import org.eclipse.lsp4j.ConfigurationParams;
+import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.DidChangeConfigurationParams;
@@ -30,6 +33,8 @@ import org.eclipse.lsp4j.DocumentSymbolParams;
 import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializeResult;
 import org.eclipse.lsp4j.InitializedParams;
+import org.eclipse.lsp4j.Location;
+import org.eclipse.lsp4j.LocationLink;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.Position;
@@ -41,7 +46,6 @@ import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.SymbolKind;
 import org.eclipse.lsp4j.TextDocumentSyncKind;
 import org.eclipse.lsp4j.TextDocumentSyncOptions;
-import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.CompletableFutures;
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
@@ -56,13 +60,17 @@ import org.eclipse.lsp4j.services.WorkspaceService;
 import edu.uiowa.cs.clc.kind2.Kind2Exception;
 import edu.uiowa.cs.clc.kind2.api.IProgressMonitor;
 import edu.uiowa.cs.clc.kind2.api.Kind2Api;
-import edu.uiowa.cs.clc.kind2.results.LogLevel;
+import edu.uiowa.cs.clc.kind2.api.LogLevel;
+import edu.uiowa.cs.clc.kind2.api.Module;
+import edu.uiowa.cs.clc.kind2.api.SolverOption;
+import edu.uiowa.cs.clc.kind2.results.Analysis;
 import edu.uiowa.cs.clc.kind2.results.AstInfo;
 import edu.uiowa.cs.clc.kind2.results.ConstDeclInfo;
 import edu.uiowa.cs.clc.kind2.results.ContractInfo;
 import edu.uiowa.cs.clc.kind2.results.FunctionInfo;
 import edu.uiowa.cs.clc.kind2.results.Log;
 import edu.uiowa.cs.clc.kind2.results.NodeInfo;
+import edu.uiowa.cs.clc.kind2.results.NodeResult;
 import edu.uiowa.cs.clc.kind2.results.Property;
 import edu.uiowa.cs.clc.kind2.results.Result;
 import edu.uiowa.cs.clc.kind2.results.TypeDeclInfo;
@@ -70,21 +78,21 @@ import edu.uiowa.cs.clc.kind2.results.TypeDeclInfo;
 /**
  * LanguageServer
  */
-public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageServer, LanguageClientAware {
+public class Kind2LanguageServer
+    implements org.eclipse.lsp4j.services.LanguageServer, LanguageClientAware {
 
-  private static final int URI_PREFIX_LENGTH = "file://".length();
-  private List<String> options;
   private Kind2LanguageClient client;
   private Map<String, String> openDocuments;
   private Map<String, Result> parseResults;
-  private Map<String, Map<String, Result>> analysisResults;
+  private Map<String, Map<String, NodeResult>> analysisResults;
 
   public Kind2LanguageServer() {
-    options = new ArrayList<>();
     client = null;
     openDocuments = new HashMap<>();
     parseResults = new HashMap<>();
     analysisResults = new HashMap<>();
+    Result.setOpeningSymbols("");
+    Result.setClosingSymbols("");
   }
 
   public String getText(String uri) throws IOException, URISyntaxException {
@@ -94,67 +102,15 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
     return Files.readString(Paths.get(new URI(uri)));
   }
 
-  String getSmtSolverOption(String solver) {
-    switch (solver) {
-    case "Z3":
-      return "--z3_bin";
-    case "CVC4":
-      return "--cvc4_bin";
-    case "Yices":
-      return "--yices_bin";
-    case "Yices2":
-      return "--yices2_bin";
-    case "Boolector":
-      return "--boolector_bin";
-    case "MathSAT":
-      return "--Mathsat_bin";
-    }
-    return null;
-  }
-
-  Result callKind2(String uri, List<String> options, CancelChecker cancelToken)
-      throws Kind2Exception, IOException, URISyntaxException {
-    try {
-      Kind2Api.KIND2 = client.getKind2Path().get();
-      Kind2Api api = new Kind2Api();
-      // Since we're using `stdin` to pass the program, `kind2` does not know
-      // where the file containing the program is located. So, we need to add
-      // the file's directory to the list of includes.
-      options.add("--include_dir");
-      options.add(uri.substring(7, uri.lastIndexOf("/")));
-      options.add("-json");
-      String solver = client.getSmtSolver().get();
-      options.add("--smt_solver");
-      options.add(solver);
-      String solverPath = client.getSmtSolverPath().get();
-      if (!solverPath.equals("")) {
-        options.add(getSmtSolverOption(solver));
-        options.add(solverPath);
-      }
-      api.setArgs(options);
-      Result result = new Result();
-      IProgressMonitor monitor = new IProgressMonitor() {
-        @Override
-        public boolean isCanceled() {
-          return cancelToken == null ? false : cancelToken.isCanceled();
-        }
-
-        @Override
-        public void done() {
-        }
-      };
-      api.execute(getText(uri), result, monitor);
-      return result;
-    } catch (InterruptedException | ExecutionException e) {
-      throw new ResponseErrorException(new ResponseError(ResponseErrorCode.ParseError, e.getMessage(), e));
-    }
-  }
-
-  void checkLog(String uri, String component) throws ResponseErrorException {
-    for (Log log : analysisResults.get(uri).get(component).getKind2Logs()) {
-      if (log.getLevel() == LogLevel.error || log.getLevel() == LogLevel.fatal) {
-        throw new ResponseErrorException(new ResponseError(ResponseErrorCode.InternalError,
-            "An error occurred while checking the component:\n" + log.getValue(), null));
+  void checkLog(Result result) throws ResponseErrorException {
+    for (Log log : result.getKind2Logs()) {
+      if (log.getLevel() == edu.uiowa.cs.clc.kind2.results.LogLevel.fatal
+          || log.getLevel() == edu.uiowa.cs.clc.kind2.results.LogLevel.error) {
+        throw new ResponseErrorException(
+            new ResponseError(ResponseErrorCode.InternalError,
+                "An error occurred while checking the component:\n"
+                    + log.getValue(),
+                null));
       }
     }
   }
@@ -162,20 +118,20 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
   Diagnostic logToDiagnostic(Log log) {
     DiagnosticSeverity ds;
     switch (log.getLevel()) {
-    case error:
+    case off:
     case fatal:
+    case error:
       ds = DiagnosticSeverity.Error;
-      break;
-    case info:
-      ds = DiagnosticSeverity.Information;
       break;
     case warn:
       ds = DiagnosticSeverity.Warning;
       break;
     case note:
-    case off:
-    case trace:
+    case info:
     case debug:
+    case trace:
+      ds = DiagnosticSeverity.Information;
+      break;
     default:
       ds = null;
       break;
@@ -187,12 +143,14 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
 
     if (log.getLine() != null) {
       return new Diagnostic(
-          new Range(new Position(Integer.parseInt(log.getLine()) - 1, Integer.parseInt(log.getColumn())),
+          new Range(
+              new Position(Integer.parseInt(log.getLine()) - 1,
+                  Integer.parseInt(log.getColumn()) - 1),
               new Position(Integer.parseInt(log.getLine()), 0)),
           log.getValue(), ds, "Kind 2: " + log.getSource());
     }
-    return new Diagnostic(new Range(new Position(0, 0), new Position(0, 0)), log.getValue(), ds,
-        "Kind 2: " + log.getSource());
+    return new Diagnostic(new Range(new Position(0, 0), new Position(0, 0)),
+        log.getValue(), ds, "Kind 2: " + log.getSource());
   }
 
   /**
@@ -205,17 +163,21 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
 
     // ignore exceptions from syntax errors
     try {
-      ArrayList<String> newOptions = new ArrayList<>();
-      Collections.copy(options, newOptions);
-      Collections.addAll(newOptions, "--old_frontend", "false", "--only_parse", "true", "--lsp", "true");
-      parseResults.put(uri, callKind2(uri, newOptions, null));
-    } catch (Kind2Exception | IOException | URISyntaxException e) {
-      throw new ResponseErrorException(new ResponseError(ResponseErrorCode.ParseError, e.getMessage(), e));
+      Kind2Api api = getPresetKind2Api();
+      api.setOldFrontend(false);
+      api.setOnlyParse(true);
+      api.setLsp(true);
+      api.includeDir(Paths.get(new URI(uri)).getParent().toString());
+      parseResults.put(uri, api.execute(getText(uri)));
+    } catch (Kind2Exception | IOException | URISyntaxException
+        | InterruptedException | ExecutionException e) {
+      throw new ResponseErrorException(
+          new ResponseError(ResponseErrorCode.ParseError, e.getMessage(), e));
     }
 
     List<Diagnostic> diagnostics = new ArrayList<>();
 
-    for (Log log : parseResults.get(uri).getKind2Logs()) {
+    for (Log log : parseResults.get(uri).getAllKind2Logs()) {
       Diagnostic diagnostic = logToDiagnostic(log);
       if (diagnostic != null) {
         diagnostics.add(diagnostic);
@@ -227,9 +189,11 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
   }
 
   @Override
-  public CompletableFuture<InitializeResult> initialize(InitializeParams params) {
+  public CompletableFuture<InitializeResult> initialize(
+      InitializeParams params) {
     return CompletableFuture.supplyAsync(() -> {
-      client.logMessage(new MessageParams(MessageType.Info, "Initializing server..."));
+      client.logMessage(
+          new MessageParams(MessageType.Info, "Initializing server..."));
       ServerCapabilities sCapabilities = new ServerCapabilities();
       TextDocumentSyncOptions syncOptions = new TextDocumentSyncOptions();
       syncOptions.setOpenClose(true);
@@ -237,18 +201,21 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
       syncOptions.setSave(new SaveOptions(true));
       sCapabilities.setTextDocumentSync(syncOptions);
       sCapabilities.setDocumentSymbolProvider(true);
+      sCapabilities.setDefinitionProvider(true);
       return new InitializeResult(sCapabilities);
     });
   }
 
   @Override
   public void initialized(InitializedParams params) {
-    client.logMessage(new MessageParams(MessageType.Info, "Server initialized."));
+    client
+        .logMessage(new MessageParams(MessageType.Info, "Server initialized."));
   }
 
-  private String updateUri(String json, String uri) {
-    uri = FileSystems.getDefault().getPath(uri.substring(URI_PREFIX_LENGTH)).normalize().toAbsolutePath().toUri()
-        .toString();
+  private String replacePathWithUri(String json, String mainUri, String path)
+      throws URISyntaxException {
+    String uri = Paths.get(new URI(mainUri)).getParent().resolve(path)
+        .normalize().toUri().toString();
     if (json.contains("\"file\":")) {
       int l = json.indexOf("\"file\":");
       int r = json.indexOf('\"', l + 9) + 1;
@@ -268,13 +235,19 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
     return CompletableFuture.supplyAsync(() -> {
       List<String> components = new ArrayList<>();
       if (parseResults.containsKey(uri)) {
-        for (AstInfo info : parseResults.get(uri).getAstInfos()) {
-          if (info instanceof NodeInfo && !((NodeInfo) info).isImported()
-              || info instanceof FunctionInfo && !((FunctionInfo) info).isImported()) {
-            if (info.getFile() == null) {
-              components.add(updateUri(info.getJson(), uri));
+        try {
+          for (AstInfo info : parseResults.get(uri).getAstInfos()) {
+            if (info instanceof NodeInfo && !((NodeInfo) info).isImported()
+                || info instanceof FunctionInfo
+                    && !((FunctionInfo) info).isImported()) {
+              components.add(replacePathWithUri(info.getJson(), uri,
+                  info.getFile() == null ? new URI(uri).getPath()
+                      : info.getFile()));
             }
           }
+        } catch (URISyntaxException e) {
+          throw new ResponseErrorException(new ResponseError(
+              ResponseErrorCode.ParseError, e.getMessage(), e));
         }
       }
       return components;
@@ -282,49 +255,88 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
   }
 
   @JsonRequest(value = "kind2/check", useSegment = false)
-  public CompletableFuture<Set<String>> check(String uri, String name) {
+  public CompletableFuture<List<String>> check(String uri, String name) {
     return CompletableFutures.computeAsync(cancelToken -> {
-      client.logMessage(new MessageParams(MessageType.Info, "Checking component " + name + " in " + uri + "..."));
-
-      ArrayList<String> newOptions = new ArrayList<String>();
-
-      Collections.copy(options, newOptions);
-      Collections.addAll(newOptions, "--lus_main", name);
-
+      client.logMessage(new MessageParams(MessageType.Info,
+          "Checking component " + name + " in " + uri + "..."));
       analysisResults.get(uri).remove(name);
       Result result = new Result();
+      IProgressMonitor monitor = new IProgressMonitor() {
+        @Override
+        public boolean isCanceled() {
+          return cancelToken == null ? false : cancelToken.isCanceled();
+        }
+
+        @Override
+        public void done() {
+        }
+      };
 
       try {
-        result = callKind2(uri, newOptions, cancelToken);
-      } catch (Kind2Exception | IOException | URISyntaxException e) {
-        throw new ResponseErrorException(new ResponseError(ResponseErrorCode.InternalError, e.getMessage(), e));
+        Kind2Api api = getCheckKind2Api(name);
+        api.includeDir(Paths.get(new URI(uri)).getParent().toString());
+        api.execute(getText(uri), result, monitor);
+      } catch (Kind2Exception | IOException | URISyntaxException
+          | InterruptedException | ExecutionException e) {
+        throw new ResponseErrorException(new ResponseError(
+            ResponseErrorCode.InternalError, e.getMessage(), e));
       }
 
       if (cancelToken.isCanceled()) {
-        client.logMessage(new MessageParams(MessageType.Info, "Check cancelled."));
+        client.logMessage(
+            new MessageParams(MessageType.Info, "Check cancelled."));
         // Throw an exception for the launcher to handle.
         cancelToken.checkCanceled();
       }
 
-      analysisResults.get(uri).put(name, result);
-      checkLog(uri, name);
+      for (Map.Entry<String, NodeResult> entry : result.getResultMap()
+          .entrySet()) {
+        analysisResults.get(uri).put(entry.getKey(), entry.getValue());
+      }
 
-      Set<Property> properties = new HashSet<>();
+      List<Diagnostic> diagnostics = new ArrayList<>();
+      for (Log log : result.getAllKind2Logs()) {
+        Diagnostic diagnostic = logToDiagnostic(log);
+        if (diagnostic != null) {
+          diagnostics.add(diagnostic);
+        }
+      }
+      client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
 
-      properties.addAll(analysisResults.get(uri).get(name).getValidProperties());
-      properties.addAll(analysisResults.get(uri).get(name).getFalsifiedProperties());
-      properties.addAll(analysisResults.get(uri).get(name).getUnknownProperties());
+      checkLog(result);
 
-      Set<String> jsons = properties.stream()
-          .map(p -> updateUri(p.getJson(), p.getFile() == null ? uri : "file://" + p.getFile()))
-          .collect(Collectors.toSet());
+      List<String> nodeResults = new ArrayList<>();
 
-      return jsons;
+      for (Map.Entry<String, NodeResult> entry : result.getResultMap()
+          .entrySet()) {
+        List<String> analyses = new ArrayList<>();
+        for (Analysis analysis : entry.getValue().getAnalyses()) {
+          String json = analysis.getJson();
+          json = json.substring(0, json.length() - 2) + ",\"properties\": ";
+          List<String> properties = analysis.getProperties().stream().map(p -> {
+            try {
+              return replacePathWithUri(p.getJson(), uri,
+                  p.getFile() == null ? new URI(uri).getPath() : p.getFile());
+            } catch (URISyntaxException e) {
+              throw new ResponseErrorException(new ResponseError(
+                  ResponseErrorCode.ParseError, e.getMessage(), e));
+            }
+          }).collect(Collectors.toList());
+          json = json + properties.toString() + '}';
+          analyses.add(json);
+        }
+        String json = "{\"name\": \"" + entry.getKey() + "\",\"analyses\": "
+            + analyses.toString() + "}";
+        nodeResults.add(json);
+      }
+
+      return nodeResults;
     });
   }
 
   @JsonRequest(value = "kind2/counterExample", useSegment = false)
-  public CompletableFuture<String> counterExample(String uri, String component, String property) {
+  public CompletableFuture<String> counterExample(String uri, String component,
+      List<String> abs, List<String> concrete, String property) {
     return CompletableFuture.supplyAsync(() -> {
       if (!analysisResults.containsKey(uri)) {
         return null;
@@ -332,35 +344,253 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
       if (!analysisResults.get(uri).containsKey(component)) {
         return null;
       }
-      checkLog(uri, component);
-      for (var prop : analysisResults.get(uri).get(component).getFalsifiedProperties()) {
-        if (prop.getJsonName().equals(property)) {
-          return prop.getCounterExample().getJson();
+      for (Analysis analysis : analysisResults.get(uri).get(component)
+          .getAnalyses()) {
+        if (analysis.getAbstractNodes().equals(abs)
+            && analysis.getConcreteNodes().equals(concrete)) {
+          for (Property prop : analysis.getFalsifiedProperties()) {
+            if (prop.getJsonName().equals(property)) {
+              return prop.getCounterExample().getJson();
+            }
+          }
         }
       }
       return null;
     });
   }
 
+  private SolverOption stringToSolver(String solver) {
+    switch (solver.toUpperCase()) {
+    case "BOOLECTOR":
+      return SolverOption.BOOLECTOR;
+    case "CVC4":
+      return SolverOption.CVC4;
+    case "YICES":
+      return SolverOption.YICES;
+    case "YICES2":
+      return SolverOption.YICES2;
+    case "Z3":
+      return SolverOption.Z3;
+    default:
+      return null;
+    }
+  }
+
+  private Module stringToModule(String level) {
+    switch (level.toUpperCase()) {
+    case "IC3":
+      return Module.IC3;
+    case "BMC":
+      return Module.BMC;
+    case "IND":
+      return Module.IND;
+    case "IND2":
+      return Module.IND2;
+    case "INVGEN":
+      return Module.INVGEN;
+    case "INVGENOS":
+      return Module.INVGENOS;
+    case "INVGENINT":
+      return Module.INVGENINT;
+    case "INVGENINTOS":
+      return Module.INVGENINTOS;
+    case "INVGENMACH":
+      return Module.INVGENMACH;
+    case "INVGENMACHOS":
+      return Module.INVGENMACHOS;
+    case "INVGENREAL":
+      return Module.INVGENREAL;
+    case "INVGENREALOS":
+      return Module.INVGENREALOS;
+    case "C2I":
+      return Module.C2I;
+    case "interpreter":
+      return Module.interpreter;
+    case "MCS":
+      return Module.MCS;
+    case "CONTRACTCK":
+      return Module.CONTRACTCK;
+    default:
+      throw new IllegalArgumentException("Error: Unknown module.");
+    }
+  }
+
+  private LogLevel stringToLevel(String level) {
+    switch (level.toUpperCase()) {
+    case "OFF":
+      return LogLevel.OFF;
+    case "FATAL":
+      return LogLevel.FATAL;
+    case "ERROR":
+      return LogLevel.ERROR;
+    case "WARN":
+      return LogLevel.WARN;
+    case "NOTE":
+      return LogLevel.NOTE;
+    case "INFO":
+      return LogLevel.INFO;
+    case "DEBUG":
+      return LogLevel.DEBUG;
+    case "TRACE":
+      return LogLevel.TRACE;
+    default:
+      throw new IllegalArgumentException("Error: Unknown log level.");
+    }
+  }
+
+  private void setSmtSolverPath(Kind2Api api, SolverOption solver,
+      JsonObject smtConfigs) throws InterruptedException, ExecutionException {
+    if (solver == null) {
+      if (smtConfigs.get("z3_bin").getAsString().equals("")) {
+        api.setZ3Bin(client.getDefaultZ3Path().get());
+      } else if (!smtConfigs.get("z3_bin").getAsString().equals("z3")) {
+        api.setZ3Bin(smtConfigs.get("z3_bin").getAsString());
+      }
+    } else {
+      switch (solver) {
+      case BOOLECTOR:
+        if (!smtConfigs.get("boolector_bin").getAsString()
+            .equals("boolector")) {
+          api.setBoolectorBin(smtConfigs.get("boolector_bin").getAsString());
+        }
+        break;
+      case CVC4:
+        if (!smtConfigs.get("cvc4_bin").getAsString().equals("cvc4")) {
+          api.setBoolectorBin(smtConfigs.get("cvc4_bin").getAsString());
+        }
+        break;
+      case YICES:
+        if (!smtConfigs.get("yices_bin").getAsString().equals("yices")) {
+          api.setBoolectorBin(smtConfigs.get("yices_bin").getAsString());
+        }
+        break;
+      case YICES2:
+        if (!smtConfigs.get("yices2_bin").getAsString().equals("yices-smt2")) {
+          api.setBoolectorBin(smtConfigs.get("yices2_bin").getAsString());
+        }
+        break;
+      case Z3:
+        if (smtConfigs.get("z3_bin").getAsString().equals("")) {
+          api.setZ3Bin(client.getDefaultZ3Path().get());
+        } else if (!smtConfigs.get("z3_bin").getAsString().equals("z3")) {
+          api.setZ3Bin(smtConfigs.get("z3_bin").getAsString());
+        }
+      default:
+        break;
+      }
+    }
+  }
+
+  public Kind2Api getPresetKind2Api()
+      throws InterruptedException, ExecutionException {
+    ConfigurationItem kind2Options = new ConfigurationItem();
+    kind2Options.setSection("kind2");
+    JsonObject configs = (JsonObject) this.client
+        .configuration(new ConfigurationParams(Arrays.asList(kind2Options)))
+        .get().get(0);
+    if (configs.get("kind2_path").getAsString().equals("")) {
+      Kind2Api.KIND2 = client.getDefaultKind2Path().get();
+    } else {
+      Kind2Api.KIND2 = configs.get("kind2_path").getAsString();
+    }
+    Kind2Api api = new Kind2Api();
+    JsonObject smtConfigs = configs.get("smt").getAsJsonObject();
+    SolverOption solver = stringToSolver(
+        smtConfigs.get("smt_solver").getAsString());
+    if (solver != null) {
+      api.setSmtSolver(solver);
+    }
+    setSmtSolverPath(api, solver, smtConfigs);
+    if (!configs.get("log_level").getAsString().equals("note")) {
+      api.setLogLevel(stringToLevel(configs.get("log_level").getAsString()));
+    }
+    return api;
+  }
+
+  public Kind2Api getCheckKind2Api(String name)
+      throws InterruptedException, ExecutionException {
+    ConfigurationItem kind2Options = new ConfigurationItem();
+    kind2Options.setSection("kind2");
+    JsonObject configs = (JsonObject) this.client
+        .configuration(new ConfigurationParams(Arrays.asList(kind2Options)))
+        .get().get(0);
+    Kind2Api api = getPresetKind2Api();
+    if (!configs.get("smt").getAsJsonObject().get("check_sat_assume")
+        .getAsBoolean()) {
+      api.setCheckSatAssume(false);
+    }
+    if (configs.get("ind").getAsJsonObject().get("ind_print_cex")
+        .getAsBoolean()) {
+      api.setIndPrintCex(true);
+    }
+    if (configs.get("test").getAsJsonObject().get("testgen").getAsBoolean()) {
+      api.setTestgen(true);
+    }
+    if (configs.get("contracts").getAsJsonObject().get("compositional")
+        .getAsBoolean()) {
+      api.setCompositional(true);
+    }
+    if (configs.get("certif").getAsJsonObject().get("certif").getAsBoolean()) {
+      api.setIndPrintCex(true);
+    }
+    if (!configs.get("output_dir").getAsString().equals("")) {
+      api.outputDir(configs.get("output_dir").getAsString());
+    }
+    if (configs.get("dump_cex").getAsBoolean()) {
+      api.setDumpCex(true);
+    }
+    if (configs.get("timeout").getAsFloat() != 0) {
+      api.setTimeout(configs.get("timeout").getAsFloat());
+    }
+    for (JsonElement option : configs.get("modules").getAsJsonArray()) {
+      api.enable(stringToModule(option.getAsString()));
+    }
+    if (configs.get("modular").getAsBoolean()) {
+      api.setModular(true);
+    }
+    if (!configs.get("slice_nodes").getAsBoolean()) {
+      api.setSliceNodes(false);
+    }
+    if (!configs.get("check_subproperties").getAsBoolean()) {
+      api.setCheckSubproperties(false);
+    }
+    ArrayList<String> otherOptions = new ArrayList<>();
+    for (JsonElement option : configs.get("other_options").getAsJsonArray()) {
+      otherOptions.add(option.getAsString());
+    }
+    api.setOtherOptions(otherOptions);
+    api.setLusMain(name);
+    return api;
+  }
+
   @JsonRequest(value = "kind2/interpret", useSegment = false)
-  public CompletableFuture<String> interpret(String uri, String main, String json) {
+  public CompletableFuture<String> interpret(String uri, String main,
+      String json) {
     return CompletableFuture.supplyAsync(() -> {
       try {
-        Kind2Api api = new Kind2Api();
-        Kind2Api.KIND2 = client.getKind2Path().get();
-        String solver = client.getSmtSolver().get();
-        List<String> options = new ArrayList<>();
-        options.add("--smt_solver");
-        options.add(solver);
-        String solverPath = client.getSmtSolverPath().get();
-        if (!solverPath.equals("")) {
-          options.add(getSmtSolverOption(solver));
-          options.add(solverPath);
-        }
-        api.setArgs(options);
+        Kind2Api api = getPresetKind2Api();
         return api.interpret(new URI(uri), main, json);
-      } catch (URISyntaxException | InterruptedException | ExecutionException e) {
-        throw new ResponseErrorException(new ResponseError(ResponseErrorCode.InternalError, e.getMessage(), e));
+      } catch (URISyntaxException | InterruptedException
+          | ExecutionException e) {
+        throw new ResponseErrorException(new ResponseError(
+            ResponseErrorCode.InternalError, e.getMessage(), e));
+      }
+    });
+  }
+
+  @JsonRequest(value = "kind2/getKind2Cmd", useSegment = false)
+  public CompletableFuture<List<String>> getKind2Cmd(String uri, String main) {
+    return CompletableFuture.supplyAsync(() -> {
+      try {
+        Kind2Api api = getCheckKind2Api(main);
+        List<String> cmd = api.getOptions();
+        cmd.set(0, Kind2Api.KIND2);
+        cmd.add(new URI(uri).getPath());
+        return cmd;
+      } catch (InterruptedException | ExecutionException
+          | URISyntaxException e) {
+        throw new ResponseErrorException(new ResponseError(
+            ResponseErrorCode.InternalError, e.getMessage(), e));
       }
     });
   }
@@ -408,11 +638,14 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
         parseResults.remove(uri);
         analysisResults.remove(uri);
         client.updateComponents(uri);
+        client.publishDiagnostics(
+            new PublishDiagnosticsParams(uri, new ArrayList<>()));
       }
 
       @Override
       public void didSave(DidSaveTextDocumentParams params) {
-        openDocuments.replace(params.getTextDocument().getUri(), params.getText());
+        openDocuments.replace(params.getTextDocument().getUri(),
+            params.getText());
       }
 
       @Override
@@ -424,10 +657,12 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
           if (parseResults.containsKey(uri)) {
             for (AstInfo info : parseResults.get(uri).getAstInfos()) {
               if (info.getFile() == null) {
-                Position startPos = new Position(Integer.parseInt(info.getStartLine()) - 1,
-                    Integer.parseInt(info.getStartColumn()));
-                Position endPos = new Position(Integer.parseInt(info.getEndLine()) - 1,
-                    Integer.parseInt(info.getEndColumn()));
+                Position startPos = new Position(
+                    Integer.parseInt(info.getStartLine()) - 1,
+                    Integer.parseInt(info.getStartColumn()) - 1);
+                Position endPos = new Position(
+                    Integer.parseInt(info.getEndLine()) - 1,
+                    Integer.parseInt(info.getEndColumn()) - 1);
                 Range range = new Range(startPos, endPos);
                 SymbolKind kind;
                 if (info instanceof TypeDeclInfo) {
@@ -443,11 +678,64 @@ public class Kind2LanguageServer implements org.eclipse.lsp4j.services.LanguageS
                 } else {
                   kind = null;
                 }
-                symbols.add(Either.forRight(new DocumentSymbol(info.getName(), kind, range, range)));
+                symbols.add(Either.forRight(
+                    new DocumentSymbol(info.getName(), kind, range, range)));
               }
             }
           }
           return symbols;
+        });
+      }
+
+      private String getSymbolName(String text, Position pos) {
+        List<String> lines = text.lines().collect(Collectors.toList());
+        String line = lines.get(pos.getLine());
+        if (pos.getCharacter() == line.length()) {
+          return "";
+        }
+        int i = pos.getCharacter();
+        while (i >= 0 && (Character.isLetterOrDigit(line.charAt(i))
+            || line.charAt(i) == '_')) {
+          i -= 1;
+        }
+        i++;
+        int j = pos.getCharacter() + 1;
+        while (j < line.length() && (Character.isLetterOrDigit(line.charAt(j))
+            || line.charAt(j) == '_')) {
+          j += 1;
+        }
+        return line.substring(i, j);
+      }
+
+      @Override
+      public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> definition(
+          DefinitionParams params) {
+        return CompletableFuture.supplyAsync(() -> {
+          String uri = params.getTextDocument().getUri();
+          String name;
+          try {
+            name = getSymbolName(getText(uri), params.getPosition());
+          } catch (IOException | URISyntaxException e) {
+            throw new ResponseErrorException(new ResponseError(
+                ResponseErrorCode.ParseError, e.getMessage(), e));
+          }
+          List<Location> decs = new ArrayList<>();
+          if (parseResults.containsKey(uri)) {
+            for (AstInfo info : parseResults.get(uri).getAstInfos()) {
+              if (info.getName().equals(name)) {
+                Position startPos = new Position(
+                    Integer.parseInt(info.getStartLine()) - 1,
+                    Integer.parseInt(info.getStartColumn()) - 1);
+                Position endPos = new Position(
+                    Integer.parseInt(info.getEndLine()) - 1,
+                    Integer.parseInt(info.getEndColumn()) - 1);
+                String decUri = info.getFile() == null ? uri : info.getFile();
+                Range decRange = new Range(startPos, endPos);
+                decs.add(new Location(decUri, decRange));
+              }
+            }
+          }
+          return Either.forLeft(decs);
         });
       }
     };
