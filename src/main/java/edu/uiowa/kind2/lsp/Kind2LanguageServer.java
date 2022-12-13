@@ -363,8 +363,8 @@ public class Kind2LanguageServer
     switch (solver.toUpperCase()) {
     case "BOOLECTOR":
       return SolverOption.BOOLECTOR;
-    case "CVC4":
-      return SolverOption.CVC4;
+    case "CVC5":
+      return SolverOption.CVC5;
     case "YICES":
       return SolverOption.YICES;
     case "YICES2":
@@ -454,9 +454,9 @@ public class Kind2LanguageServer
           api.setBoolectorBin(smtConfigs.get("boolector_bin").getAsString());
         }
         break;
-      case CVC4:
-        if (!smtConfigs.get("cvc4_bin").getAsString().equals("cvc4")) {
-          api.setBoolectorBin(smtConfigs.get("cvc4_bin").getAsString());
+      case CVC5:
+        if (!smtConfigs.get("cvc5_bin").getAsString().equals("cvc5")) {
+          api.setBoolectorBin(smtConfigs.get("cvc5_bin").getAsString());
         }
         break;
       case YICES:
