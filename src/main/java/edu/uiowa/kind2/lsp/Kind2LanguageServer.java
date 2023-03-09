@@ -366,8 +366,8 @@ public class Kind2LanguageServer
 
   private SolverOption stringToSolver(String solver) {
     switch (solver.toUpperCase()) {
-    case "BOOLECTOR":
-      return SolverOption.BOOLECTOR;
+    case "BITWUZLA":
+      return SolverOption.BITWUZLA;
     case "CVC5":
       return SolverOption.CVC5;
     case "YICES":
@@ -453,25 +453,25 @@ public class Kind2LanguageServer
       }
     } else {
       switch (solver) {
-      case BOOLECTOR:
-        if (!smtConfigs.get("boolector_bin").getAsString()
-            .equals("boolector")) {
-          api.setBoolectorBin(smtConfigs.get("boolector_bin").getAsString());
+      case BITWUZLA:
+        if (!smtConfigs.get("bitwuzla_bin").getAsString()
+            .equals("bitwuzla")) {
+          api.setBitwuzlaBin(smtConfigs.get("bitwuzla_bin").getAsString());
         }
         break;
       case CVC5:
         if (!smtConfigs.get("cvc5_bin").getAsString().equals("cvc5")) {
-          api.setBoolectorBin(smtConfigs.get("cvc5_bin").getAsString());
+          api.setcvc5Bin(smtConfigs.get("cvc5_bin").getAsString());
         }
         break;
       case YICES:
         if (!smtConfigs.get("yices_bin").getAsString().equals("yices")) {
-          api.setBoolectorBin(smtConfigs.get("yices_bin").getAsString());
+          api.setYicesBin(smtConfigs.get("yices_bin").getAsString());
         }
         break;
       case YICES2:
         if (!smtConfigs.get("yices2_bin").getAsString().equals("yices-smt2")) {
-          api.setBoolectorBin(smtConfigs.get("yices2_bin").getAsString());
+          api.setYices2Bin(smtConfigs.get("yices2_bin").getAsString());
         }
         break;
       case Z3:
