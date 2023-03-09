@@ -361,8 +361,8 @@ public class Kind2LanguageServer
 
   private SolverOption stringToSolver(String solver) {
     switch (solver.toUpperCase()) {
-    case "BOOLECTOR":
-      return SolverOption.BOOLECTOR;
+    case "BITWUZLA":
+      return SolverOption.BITWUZLA;
     case "CVC5":
       return SolverOption.CVC5;
     case "YICES":
@@ -448,10 +448,10 @@ public class Kind2LanguageServer
       }
     } else {
       switch (solver) {
-      case BOOLECTOR:
-        if (!smtConfigs.get("boolector_bin").getAsString()
-            .equals("boolector")) {
-          api.setBoolectorBin(smtConfigs.get("boolector_bin").getAsString());
+      case BITWUZLA:
+        if (!smtConfigs.get("bitwuzla_bin").getAsString()
+            .equals("bitwuzla")) {
+          api.setBitwuzlaBin(smtConfigs.get("bitwuzla_bin").getAsString());
         }
         break;
       case CVC5:
