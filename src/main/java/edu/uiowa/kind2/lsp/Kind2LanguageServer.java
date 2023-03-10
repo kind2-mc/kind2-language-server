@@ -347,10 +347,15 @@ public class Kind2LanguageServer
       for (Analysis analysis : analysisResults.get(uri).get(component)
           .getAnalyses()) {
         if (analysis.getAbstractNodes().equals(abs)
-            && analysis.getConcreteNodes().equals(concrete)) {
+            && analysis.getConcreteNodes().equals(concrete)) { 
           for (Property prop : analysis.getFalsifiedProperties()) {
             if (prop.getJsonName().equals(property)) {
               return prop.getCounterExample().getJson();
+            }
+          }
+          for (Property prop : analysis.getReachableProperties()) {
+            if (prop.getJsonName().equals(property)) {
+              return prop.getExampleTrace().getJson();
             }
           }
         }
