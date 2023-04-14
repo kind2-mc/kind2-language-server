@@ -168,8 +168,8 @@ public class Kind2LanguageServer
       api.setOnlyParse(true);
       api.setLsp(true);
       api.includeDir(Paths.get(new URI(uri)).getParent().toString());
-      parseResults.put(uri, api.execute(getText(uri)));
-    } catch (Kind2Exception | IOException | URISyntaxException
+      parseResults.put(uri, api.executeFilename(Paths.get(new URI(uri)).toString()));
+    } catch (Kind2Exception | URISyntaxException
         | InterruptedException | ExecutionException e) {
       throw new ResponseErrorException(
           new ResponseError(ResponseErrorCode.ParseError, e.getMessage(), e));
@@ -255,7 +255,7 @@ public class Kind2LanguageServer
   }
 
   @JsonRequest(value = "kind2/check", useSegment = false)
-  public CompletableFuture<List<String>> check(String uri, String name) {
+  public CompletableFuture<List<String>> check(String uri, String name, Boolean callWithFilename) {
     return CompletableFutures.computeAsync(cancelToken -> {
       client.logMessage(new MessageParams(MessageType.Info,
           "Checking component " + name + " in " + uri + "..."));
@@ -275,7 +275,11 @@ public class Kind2LanguageServer
       try {
         Kind2Api api = getCheckKind2Api(name);
         api.includeDir(Paths.get(new URI(uri)).getParent().toString());
-        api.execute(getText(uri), result, monitor);
+        if (callWithFilename) {
+          api.executeFilename(Paths.get(new URI(uri)).toString(), result, monitor);
+        } else {
+          api.execute(getText(uri), result, monitor);
+        } 
       } catch (Kind2Exception | IOException | URISyntaxException
           | InterruptedException | ExecutionException e) {
         throw new ResponseErrorException(new ResponseError(
