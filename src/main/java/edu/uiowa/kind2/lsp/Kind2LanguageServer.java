@@ -85,6 +85,7 @@ public class Kind2LanguageServer
   private Map<String, String> openDocuments;
   private Map<String, Result> parseResults;
   private Map<String, Map<String, NodeResult>> analysisResults;
+  private String workingDirectory;
 
   public Kind2LanguageServer() {
     client = null;
@@ -93,6 +94,7 @@ public class Kind2LanguageServer
     analysisResults = new HashMap<>();
     Result.setOpeningSymbols("");
     Result.setClosingSymbols("");
+    workingDirectory = null;
   }
 
   public String getText(String uri) throws IOException, URISyntaxException {
@@ -163,13 +165,16 @@ public class Kind2LanguageServer
 
     // ignore exceptions from syntax errors
     try {
+      if (workingDirectory == null) {
+        workingDirectory = client.workspaceFolders().get().get(0).getUri();
+      }
       Kind2Api api = getPresetKind2Api();
       api.setOldFrontend(false);
       api.setOnlyParse(true);
       api.setLsp(true);
       api.includeDir(Paths.get(new URI(uri)).getParent().toString());
-      parseResults.put(uri, api.executeFilename(Paths.get(new URI(uri)).toString()));
-    } catch (Kind2Exception | URISyntaxException
+      parseResults.put(uri, api.executeFilename(uri, workingDirectory, getText(uri)));
+    } catch (Kind2Exception | URISyntaxException | IOException
         | InterruptedException | ExecutionException e) {
       throw new ResponseErrorException(
           new ResponseError(ResponseErrorCode.ParseError, e.getMessage(), e));
@@ -273,10 +278,17 @@ public class Kind2LanguageServer
       };
 
       try {
+        if (workingDirectory == null) {
+          workingDirectory = client.workspaceFolders().get().get(0).getUri();
+        }
         Kind2Api api = getCheckKind2Api(name);
         api.includeDir(Paths.get(new URI(uri)).getParent().toString());
         if (callWithFilename) {
-          api.executeFilename(Paths.get(new URI(uri)).toString(), result, monitor);
+          api.executeFilename(uri, 
+                              workingDirectory,
+                              getText(uri), 
+                              result, 
+                              monitor);
         } else {
           api.execute(getText(uri), result, monitor);
         } 
