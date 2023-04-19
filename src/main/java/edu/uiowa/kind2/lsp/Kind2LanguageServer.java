@@ -370,6 +370,8 @@ public class Kind2LanguageServer
       return SolverOption.BITWUZLA;
     case "CVC5":
       return SolverOption.CVC5;
+    case "MATHSAT":
+      return SolverOption.MATHSAT;
     case "YICES":
       return SolverOption.YICES;
     case "YICES2":
@@ -462,6 +464,11 @@ public class Kind2LanguageServer
       case CVC5:
         if (!smtConfigs.get("cvc5_bin").getAsString().equals("cvc5")) {
           api.setcvc5Bin(smtConfigs.get("cvc5_bin").getAsString());
+        }
+        break;
+      case MATHSAT:
+        if (!smtConfigs.get("mathsat_bin").getAsString().equals("mathsat")) {
+          api.setMathSATBin(smtConfigs.get("mathsat_bin").getAsString());
         }
         break;
       case YICES:
