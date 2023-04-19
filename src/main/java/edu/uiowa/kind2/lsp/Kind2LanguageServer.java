@@ -156,6 +156,19 @@ public class Kind2LanguageServer
   }
 
   /**
+   * Compute a relative filepath from the working directory and file URI,
+   * both as absolute filepaths.
+   * 
+   * @param workingDirectory the current working directory
+   * @param uri the uri of the lustre file
+   */
+  private String computeRelativeFilepath(String workingDirectory, String uri) {
+    return Paths.get(URI.create(workingDirectory)).relativize(
+                 Paths.get(URI.create(uri)))
+                 .toString();
+  }
+  
+  /**
    * Call Kind 2 to parse a lustre file and check for syntax errors.
    *
    * @param uri the uri of the lustre file to parse.
@@ -172,10 +185,8 @@ public class Kind2LanguageServer
       api.setOldFrontend(false);
       api.setOnlyParse(true);
       api.setLsp(true);
-      String filepath = Paths.get(URI.create(workingDirectory)).relativize(
-                 Paths.get(URI.create(uri)))
-                 .toString();
-      api.setFakeFilename(filepath);
+      String filepath = computeRelativeFilepath(workingDirectory, uri);
+      api.setFakeFilepath(filepath);
       api.includeDir(Paths.get(new URI(uri)).getParent().toString());
       parseResults.put(uri, api.execute(getText(uri)));
     } catch (Kind2Exception | URISyntaxException | IOException
@@ -264,7 +275,7 @@ public class Kind2LanguageServer
   }
 
   @JsonRequest(value = "kind2/check", useSegment = false)
-  public CompletableFuture<List<String>> check(String uri, String name, Boolean callWithFilename) {
+  public CompletableFuture<List<String>> check(String uri, String name) {
     return CompletableFutures.computeAsync(cancelToken -> {
       client.logMessage(new MessageParams(MessageType.Info,
           "Checking component " + name + " in " + uri + "..."));
@@ -287,17 +298,11 @@ public class Kind2LanguageServer
         }
         Kind2Api api = getCheckKind2Api(name);
         api.includeDir(Paths.get(new URI(uri)).getParent().toString());
-        if (callWithFilename) {
-          String filepath = Paths.get(URI.create(workingDirectory)).relativize(
-                 Paths.get(URI.create(uri)))
-                 .toString();
-          api.setFakeFilename(filepath);
-          api.execute(getText(uri), 
-                              result, 
-                              monitor);
-        } else {
-          api.execute(getText(uri), result, monitor);
-        } 
+        String filepath = computeRelativeFilepath(workingDirectory, uri);
+        api.setFakeFilepath(filepath);
+        api.execute(getText(uri), 
+                            result, 
+                            monitor);
       } catch (Kind2Exception | IOException | URISyntaxException
           | InterruptedException | ExecutionException e) {
         throw new ResponseErrorException(new ResponseError(
