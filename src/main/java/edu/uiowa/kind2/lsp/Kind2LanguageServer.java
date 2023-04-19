@@ -172,8 +172,12 @@ public class Kind2LanguageServer
       api.setOldFrontend(false);
       api.setOnlyParse(true);
       api.setLsp(true);
+      String filepath = Paths.get(URI.create(workingDirectory)).relativize(
+                 Paths.get(URI.create(uri)))
+                 .toString();
+      api.setFakeFilename(filepath);
       api.includeDir(Paths.get(new URI(uri)).getParent().toString());
-      parseResults.put(uri, api.executeFilename(uri, workingDirectory, getText(uri)));
+      parseResults.put(uri, api.execute(getText(uri)));
     } catch (Kind2Exception | URISyntaxException | IOException
         | InterruptedException | ExecutionException e) {
       throw new ResponseErrorException(
@@ -284,9 +288,11 @@ public class Kind2LanguageServer
         Kind2Api api = getCheckKind2Api(name);
         api.includeDir(Paths.get(new URI(uri)).getParent().toString());
         if (callWithFilename) {
-          api.executeFilename(uri, 
-                              workingDirectory,
-                              getText(uri), 
+          String filepath = Paths.get(URI.create(workingDirectory)).relativize(
+                 Paths.get(URI.create(uri)))
+                 .toString();
+          api.setFakeFilename(filepath);
+          api.execute(getText(uri), 
                               result, 
                               monitor);
         } else {
