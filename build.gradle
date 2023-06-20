@@ -8,7 +8,7 @@ repositories {
 }
 
 dependencies {
-  implementation 'edu.uiowa.cs.clc:kind2-java-api:0.3.4'
+  implementation 'edu.uiowa.cs.clc:kind2-java-api:0.3.5'
   implementation 'org.eclipse.lsp4j:org.eclipse.lsp4j:0.13.0'
   testImplementation 'org.junit.jupiter:junit-jupiter-api:5.7.2'
   testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.7.2'

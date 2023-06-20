@@ -399,6 +399,8 @@ public class Kind2LanguageServer
       return SolverOption.CVC5;
     case "MATHSAT":
       return SolverOption.MATHSAT;
+    case "SMTINTERPOL":
+      return SolverOption.SMTINTERPOL;
     case "YICES":
       return SolverOption.YICES;
     case "YICES2":
@@ -496,6 +498,11 @@ public class Kind2LanguageServer
       case MATHSAT:
         if (!smtConfigs.get("mathsat_bin").getAsString().equals("mathsat")) {
           api.setMathSATBin(smtConfigs.get("mathsat_bin").getAsString());
+        }
+        break;
+      case SMTINTERPOL:
+        if (!smtConfigs.get("smtinterpol_jar").getAsString().equals("smtinterpol.jar")) {
+          api.setSmtInterpolJar(smtConfigs.get("smtinterpol_jar").getAsString());
         }
         break;
       case YICES:
