@@ -416,6 +416,10 @@ public class Kind2LanguageServer
     switch (level.toUpperCase()) {
     case "IC3":
       return Module.IC3;
+    case "IC3QE":
+      return Module.IC3QE;
+    case "IC3IA":
+      return Module.IC3IA;
     case "BMC":
       return Module.BMC;
     case "IND":
