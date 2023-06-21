@@ -591,6 +591,9 @@ public class Kind2LanguageServer
         .getAsBoolean()) {
       api.setIndPrintCex(true);
     }
+    if (configs.get("ic3ia").getAsJsonObject().get("max").getAsInt() != 2) {
+      api.setIC3IAMax(configs.get("ic3ia").getAsJsonObject().get("max").getAsInt());
+    }
     if (configs.get("test").getAsJsonObject().get("testgen").getAsBoolean()) {
       api.setTestgen(true);
     }
