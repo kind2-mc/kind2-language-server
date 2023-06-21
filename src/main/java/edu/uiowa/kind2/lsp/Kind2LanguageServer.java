@@ -478,56 +478,31 @@ public class Kind2LanguageServer
     }
   }
 
-  private void setSmtSolverPath(Kind2Api api, SolverOption solver,
+  private void setSmtSolverPaths(Kind2Api api,
       JsonObject smtConfigs) throws InterruptedException, ExecutionException {
-    if (solver == null) {
-      if (smtConfigs.get("z3_bin").getAsString().equals("")) {
-        api.setZ3Bin(client.getDefaultZ3Path().get());
-      } else if (!smtConfigs.get("z3_bin").getAsString().equals("z3")) {
-        api.setZ3Bin(smtConfigs.get("z3_bin").getAsString());
-      }
-    } else {
-      switch (solver) {
-      case BITWUZLA:
-        if (!smtConfigs.get("bitwuzla_bin").getAsString()
-            .equals("bitwuzla")) {
-          api.setBitwuzlaBin(smtConfigs.get("bitwuzla_bin").getAsString());
-        }
-        break;
-      case CVC5:
-        if (!smtConfigs.get("cvc5_bin").getAsString().equals("cvc5")) {
-          api.setcvc5Bin(smtConfigs.get("cvc5_bin").getAsString());
-        }
-        break;
-      case MATHSAT:
-        if (!smtConfigs.get("mathsat_bin").getAsString().equals("mathsat")) {
-          api.setMathSATBin(smtConfigs.get("mathsat_bin").getAsString());
-        }
-        break;
-      case SMTINTERPOL:
-        if (!smtConfigs.get("smtinterpol_jar").getAsString().equals("smtinterpol.jar")) {
-          api.setSmtInterpolJar(smtConfigs.get("smtinterpol_jar").getAsString());
-        }
-        break;
-      case YICES:
-        if (!smtConfigs.get("yices_bin").getAsString().equals("yices")) {
-          api.setYicesBin(smtConfigs.get("yices_bin").getAsString());
-        }
-        break;
-      case YICES2:
-        if (!smtConfigs.get("yices2_bin").getAsString().equals("yices-smt2")) {
-          api.setYices2Bin(smtConfigs.get("yices2_bin").getAsString());
-        }
-        break;
-      case Z3:
-        if (smtConfigs.get("z3_bin").getAsString().equals("")) {
-          api.setZ3Bin(client.getDefaultZ3Path().get());
-        } else if (!smtConfigs.get("z3_bin").getAsString().equals("z3")) {
-          api.setZ3Bin(smtConfigs.get("z3_bin").getAsString());
-        }
-      default:
-        break;
-      }
+    if (!smtConfigs.get("bitwuzla_bin").getAsString()
+        .equals("bitwuzla")) {
+      api.setBitwuzlaBin(smtConfigs.get("bitwuzla_bin").getAsString());
+    }
+    if (!smtConfigs.get("cvc5_bin").getAsString().equals("cvc5")) {
+      api.setcvc5Bin(smtConfigs.get("cvc5_bin").getAsString());
+    }
+    if (!smtConfigs.get("mathsat_bin").getAsString().equals("mathsat")) {
+      api.setMathSATBin(smtConfigs.get("mathsat_bin").getAsString());
+    }
+    if (!smtConfigs.get("smtinterpol_jar").getAsString().equals("smtinterpol.jar")) {
+      api.setSmtInterpolJar(smtConfigs.get("smtinterpol_jar").getAsString());
+    }
+    if (!smtConfigs.get("yices_bin").getAsString().equals("yices")) {
+      api.setYicesBin(smtConfigs.get("yices_bin").getAsString());
+    }
+    if (!smtConfigs.get("yices2_bin").getAsString().equals("yices-smt2")) {
+      api.setYices2Bin(smtConfigs.get("yices2_bin").getAsString());
+    }
+    if (smtConfigs.get("z3_bin").getAsString().equals("")) {
+      api.setZ3Bin(client.getDefaultZ3Path().get());
+    } else if (!smtConfigs.get("z3_bin").getAsString().equals("z3")) {
+      api.setZ3Bin(smtConfigs.get("z3_bin").getAsString());
     }
   }
 
@@ -550,7 +525,7 @@ public class Kind2LanguageServer
     if (solver != null) {
       api.setSmtSolver(solver);
     }
-    setSmtSolverPath(api, solver, smtConfigs);
+    setSmtSolverPaths(api, smtConfigs);
     if (!configs.get("log_level").getAsString().equals("note")) {
       api.setLogLevel(stringToLevel(configs.get("log_level").getAsString()));
     }
