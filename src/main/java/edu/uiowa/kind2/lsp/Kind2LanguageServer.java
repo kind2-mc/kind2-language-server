@@ -64,6 +64,7 @@ import edu.uiowa.cs.clc.kind2.api.LogLevel;
 import edu.uiowa.cs.clc.kind2.api.Module;
 import edu.uiowa.cs.clc.kind2.api.SolverOption;
 import edu.uiowa.cs.clc.kind2.api.QESolverOption;
+import edu.uiowa.cs.clc.kind2.api.ITPSolverOption;
 import edu.uiowa.cs.clc.kind2.results.Analysis;
 import edu.uiowa.cs.clc.kind2.results.AstInfo;
 import edu.uiowa.cs.clc.kind2.results.ConstDeclInfo;
@@ -424,6 +425,23 @@ public class Kind2LanguageServer
     }
   }
 
+  private ITPSolverOption stringToITPSolver(String solver) {
+    switch (solver.toUpperCase()) {
+    case "CVC5QE":
+      return ITPSolverOption.CVC5QE;
+    case "MATHSAT":
+      return ITPSolverOption.MATHSAT;
+    case "OPENSMT":
+      return ITPSolverOption.OPENSMT;
+    case "SMTINTERPOL":
+      return ITPSolverOption.SMTINTERPOL;
+    case "Z3QE":
+      return ITPSolverOption.Z3QE;
+    default:
+      return null;
+    }
+  }
+
   private Module stringToModule(String level) {
     switch (level.toUpperCase()) {
     case "IC3":
@@ -502,6 +520,9 @@ public class Kind2LanguageServer
     if (!smtConfigs.get("mathsat_bin").getAsString().equals("mathsat")) {
       api.setMathSATBin(smtConfigs.get("mathsat_bin").getAsString());
     }
+    if (!smtConfigs.get("opensmt_bin").getAsString().equals("opensmt")) {
+      api.setOpenSMTBin(smtConfigs.get("opensmt_bin").getAsString());
+    }
     if (!smtConfigs.get("smtinterpol_jar").getAsString().equals("smtinterpol.jar")) {
       api.setSmtInterpolJar(smtConfigs.get("smtinterpol_jar").getAsString());
     }
@@ -541,6 +562,11 @@ public class Kind2LanguageServer
         smtConfigs.get("smt_qe_solver").getAsString());
     if (qe_solver != null) {
       api.setQESmtSolver(qe_solver);
+    }
+    ITPSolverOption itp_solver = stringToITPSolver(
+        smtConfigs.get("smt_itp_solver").getAsString());
+    if (itp_solver != null) {
+      api.setITPSmtSolver(itp_solver);
     }
     setSmtSolverPaths(api, smtConfigs);
     if (!configs.get("log_level").getAsString().equals("note")) {
