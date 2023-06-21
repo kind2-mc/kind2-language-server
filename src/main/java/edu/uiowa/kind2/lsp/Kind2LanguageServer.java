@@ -601,6 +601,12 @@ public class Kind2LanguageServer
     if (!configs.get("slice_nodes").getAsBoolean()) {
       api.setSliceNodes(false);
     }
+    if (!configs.get("check_reach").getAsBoolean()) {
+      api.setCheckReach(false);
+    }
+    if (!configs.get("check_nonvacuity").getAsBoolean()) {
+      api.setCheckNonvacuity(false);
+    }
     if (!configs.get("check_subproperties").getAsBoolean()) {
       api.setCheckSubproperties(false);
     }
