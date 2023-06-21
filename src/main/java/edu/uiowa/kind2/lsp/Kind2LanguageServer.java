@@ -63,6 +63,7 @@ import edu.uiowa.cs.clc.kind2.api.Kind2Api;
 import edu.uiowa.cs.clc.kind2.api.LogLevel;
 import edu.uiowa.cs.clc.kind2.api.Module;
 import edu.uiowa.cs.clc.kind2.api.SolverOption;
+import edu.uiowa.cs.clc.kind2.api.QESolverOption;
 import edu.uiowa.cs.clc.kind2.results.Analysis;
 import edu.uiowa.cs.clc.kind2.results.AstInfo;
 import edu.uiowa.cs.clc.kind2.results.ConstDeclInfo;
@@ -412,6 +413,17 @@ public class Kind2LanguageServer
     }
   }
 
+  private QESolverOption stringToQESolver(String solver) {
+    switch (solver.toUpperCase()) {
+    case "CVC5":
+      return QESolverOption.CVC5;
+    case "Z3":
+      return QESolverOption.Z3;
+    default:
+      return null;
+    }
+  }
+
   private Module stringToModule(String level) {
     switch (level.toUpperCase()) {
     case "IC3":
@@ -524,6 +536,11 @@ public class Kind2LanguageServer
         smtConfigs.get("smt_solver").getAsString());
     if (solver != null) {
       api.setSmtSolver(solver);
+    }
+    QESolverOption qe_solver = stringToQESolver(
+        smtConfigs.get("smt_qe_solver").getAsString());
+    if (qe_solver != null) {
+      api.setQESmtSolver(qe_solver);
     }
     setSmtSolverPaths(api, smtConfigs);
     if (!configs.get("log_level").getAsString().equals("note")) {
