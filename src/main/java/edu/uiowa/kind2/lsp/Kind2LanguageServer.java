@@ -607,9 +607,6 @@ public class Kind2LanguageServer
     if (!configs.get("output_dir").getAsString().equals("")) {
       api.outputDir(configs.get("output_dir").getAsString());
     }
-    if (configs.get("dump_cex").getAsBoolean()) {
-      api.setDumpCex(true);
-    }
     if (configs.get("timeout").getAsFloat() != 0) {
       api.setTimeout(configs.get("timeout").getAsFloat());
     }
