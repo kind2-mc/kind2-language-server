@@ -433,7 +433,7 @@ public class Kind2LanguageServer
 
           // Add realizability info
           RealizabilityResult res = analysis.getRealizabilityResult();
-          json = json.substring(0, json.length() - 2) + ",\"realizabilityResult\": " + res.toString() + '}';
+          json = json.substring(0, json.length() - 2) + ",\"realizabilityResult\": " + "\"" + res.toString() + "\"" + '}';
           analyses.add(json);
         }
         String json = "{\"name\": \"" + entry.getKey() + "\",\"analyses\": "
