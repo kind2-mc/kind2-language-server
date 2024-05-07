@@ -75,6 +75,7 @@ import edu.uiowa.cs.clc.kind2.results.NodeInfo;
 import edu.uiowa.cs.clc.kind2.results.NodeResult;
 import edu.uiowa.cs.clc.kind2.results.Property;
 import edu.uiowa.cs.clc.kind2.results.Result;
+import edu.uiowa.cs.clc.kind2.results.RealizabilityResult;
 import edu.uiowa.cs.clc.kind2.results.TypeDeclInfo;
 
 /**
@@ -363,6 +364,88 @@ public class Kind2LanguageServer
     });
   }
 
+  @JsonRequest(value = "kind2/realizability", useSegment = false)
+  public CompletableFuture<List<String>> realizability(String uri, String name) {
+    return CompletableFutures.computeAsync(cancelToken -> {
+      client.logMessage(new MessageParams(MessageType.Info,
+          "Checking realizability of component " + name + " in " + uri + "..."));
+      analysisResults.get(uri).remove(name);
+      Result result = new Result();
+      IProgressMonitor monitor = new IProgressMonitor() {
+        @Override
+        public boolean isCanceled() {
+          return cancelToken == null ? false : cancelToken.isCanceled();
+        }
+
+        @Override
+        public void done() {
+        }
+      };
+
+      try {
+        if (workingDirectory == null) {
+          workingDirectory = client.workspaceFolders().get().get(0).getUri();
+        }
+        Kind2Api api = getCheckKind2Api(name);
+        api.includeDir(Paths.get(new URI(uri)).getParent().toString());
+        String filepath = computeRelativeFilepath(workingDirectory, uri);
+        api.setFakeFilepath(filepath);
+        ArrayList<Module> options = new ArrayList<>();
+        options.add(Module.CONTRACTCK);
+        api.execute(getText(uri), 
+                            result, 
+                            monitor,
+                            options);
+      } catch (Kind2Exception | IOException | URISyntaxException
+          | InterruptedException | ExecutionException e) {
+        throw new ResponseErrorException(new ResponseError(
+            ResponseErrorCode.InternalError, e.getMessage(), e));
+      }
+
+      if (cancelToken.isCanceled()) {
+        client.logMessage(
+            new MessageParams(MessageType.Info, "Check cancelled."));
+        // Throw an exception for the launcher to handle.
+        cancelToken.checkCanceled();
+      }
+
+      for (Map.Entry<String, NodeResult> entry : result.getResultMap()
+          .entrySet()) {
+        analysisResults.get(uri).put(entry.getKey(), entry.getValue());
+      }
+
+      List<Diagnostic> diagnostics = new ArrayList<>();
+      for (Log log : result.getAllKind2Logs()) {
+        Diagnostic diagnostic = logToDiagnostic(log);
+        if (diagnostic != null) {
+          diagnostics.add(diagnostic);
+        }
+      }
+      client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
+
+      checkLog(result);
+
+      List<String> nodeResults = new ArrayList<>();
+
+      for (Map.Entry<String, NodeResult> entry : result.getResultMap()
+          .entrySet()) {
+        List<String> analyses = new ArrayList<>();
+        for (Analysis analysis : entry.getValue().getAnalyses()) {
+          String json = analysis.getJson();
+
+          // Add realizability info
+          RealizabilityResult res = analysis.getRealizabilityResult();
+          json = json.substring(0, json.length() - 2) + ",\"realizabilityResult\": " + "\"" + res.toString() + "\"" + '}';
+          analyses.add(json);
+        }
+        String json = "{\"name\": \"" + entry.getKey() + "\",\"analyses\": "
+            + analyses.toString() + "}";
+        nodeResults.add(json);
+      }
+      return nodeResults;
+    });
+  }
+
   @JsonRequest(value = "kind2/counterExample", useSegment = false)
   public CompletableFuture<String> counterExample(String uri, String component,
       List<String> abs, List<String> concrete, String property) {
@@ -387,6 +470,29 @@ public class Kind2LanguageServer
               return prop.getExampleTrace().getJson();
             }
           }
+        }
+      }
+      return null;
+    });
+  }
+
+  // @JsonRequest(value = "kind2/deadlock", useSegment = false)
+  // public CompletableFuture<String> deadlock(String uri, String component) {
+  //   return deadlock(uri, component, "");
+  // }
+
+  @JsonRequest(value = "kind2/deadlock", useSegment = false)
+  public CompletableFuture<String> deadlock(String uri, String component, String context) {
+    return CompletableFuture.supplyAsync(() -> {
+      if (!analysisResults.containsKey(uri)) {
+        return null;
+      }
+      if (!analysisResults.get(uri).containsKey(component)) {
+        return null;
+      }
+      for (Analysis analysis : analysisResults.get(uri).get(component).getAnalyses()) {
+        if (analysis.getContext().equals(context)) {
+          return analysis.getDeadlock();
         }
       }
       return null;
