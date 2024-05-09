@@ -260,9 +260,7 @@ public class Kind2LanguageServer
       if (parseResults.containsKey(uri)) {
         try {
           for (AstInfo info : parseResults.get(uri).getAstInfos()) {
-            if (info instanceof NodeInfo && !((NodeInfo) info).isImported()
-                || info instanceof FunctionInfo
-                    && !((FunctionInfo) info).isImported()) {
+            if (info instanceof NodeInfo || info instanceof FunctionInfo) {
               components.add(replacePathWithUri(info.getJson(), uri,
                   info.getFile() == null ? new URI(uri).getPath()
                       : info.getFile()));
