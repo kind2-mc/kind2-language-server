@@ -747,9 +747,12 @@ public class Kind2LanguageServer
     return CompletableFuture.supplyAsync(() -> {
       try {
         Kind2Api api = getPresetKind2Api();
-        return api.interpret(new URI(uri), main, json);
+        api.includeDir(Paths.get(new URI(uri)).getParent().toString());
+        String filepath = computeRelativeFilepath(workingDirectory, uri);
+        api.setFakeFilepath(filepath);
+        return api.interpret(getText(uri), main, json);
       } catch (URISyntaxException | InterruptedException
-          | ExecutionException e) {
+          | ExecutionException | IOException e) {
         throw new ResponseErrorException(new ResponseError(
             ResponseErrorCode.InternalError, e.getMessage(), e));
       }
