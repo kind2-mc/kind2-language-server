@@ -260,7 +260,7 @@ public class Kind2LanguageServer
       if (parseResults.containsKey(uri)) {
         try {
           for (AstInfo info : parseResults.get(uri).getAstInfos()) {
-            if (info instanceof NodeInfo || info instanceof FunctionInfo) {
+            if (info instanceof NodeInfo || info instanceof FunctionInfo || info instanceof TypeDeclInfo) {
               components.add(replacePathWithUri(info.getJson(), uri,
                   info.getFile() == null ? new URI(uri).getPath()
                       : info.getFile()));
@@ -297,7 +297,7 @@ public class Kind2LanguageServer
         if (workingDirectory == null) {
           workingDirectory = client.workspaceFolders().get().get(0).getUri();
         }
-        Kind2Api api = getCheckKind2Api(name);
+        Kind2Api api = getCheckKind2Api(name, false);
         api.includeDir(Paths.get(new URI(uri)).getParent().toString());
         String filepath = computeRelativeFilepath(workingDirectory, uri);
         api.setFakeFilepath(filepath);
@@ -363,7 +363,7 @@ public class Kind2LanguageServer
   }
 
   @JsonRequest(value = "kind2/realizability", useSegment = false)
-  public CompletableFuture<List<String>> realizability(String uri, String name) {
+  public CompletableFuture<List<String>> realizability(String uri, String name, boolean typeDecl) {
     return CompletableFutures.computeAsync(cancelToken -> {
       client.logMessage(new MessageParams(MessageType.Info,
           "Checking realizability of component " + name + " in " + uri + "..."));
@@ -384,7 +384,7 @@ public class Kind2LanguageServer
         if (workingDirectory == null) {
           workingDirectory = client.workspaceFolders().get().get(0).getUri();
         }
-        Kind2Api api = getCheckKind2Api(name);
+        Kind2Api api = getCheckKind2Api(name, typeDecl);
         api.includeDir(Paths.get(new URI(uri)).getParent().toString());
         String filepath = computeRelativeFilepath(workingDirectory, uri);
         api.setFakeFilepath(filepath);
@@ -679,7 +679,7 @@ public class Kind2LanguageServer
     return api;
   }
 
-  public Kind2Api getCheckKind2Api(String name)
+  public Kind2Api getCheckKind2Api(String name, boolean typeDecl)
       throws InterruptedException, ExecutionException {
     ConfigurationItem kind2Options = new ConfigurationItem();
     kind2Options.setSection("kind2");
@@ -737,7 +737,11 @@ public class Kind2LanguageServer
       otherOptions.add(option.getAsString());
     }
     api.setOtherOptions(otherOptions);
-    api.setLusMain(name);
+    if (typeDecl) {
+      api.setLusMainType(name);
+    } else {
+      api.setLusMain(name);
+    }
     return api;
   }
 
@@ -763,7 +767,7 @@ public class Kind2LanguageServer
   public CompletableFuture<List<String>> getKind2Cmd(String uri, String main) {
     return CompletableFuture.supplyAsync(() -> {
       try {
-        Kind2Api api = getCheckKind2Api(main);
+        Kind2Api api = getCheckKind2Api(main, false);
         List<String> cmd = api.getOptions();
         cmd.set(0, Kind2Api.KIND2);
         cmd.add(new URI(uri).getPath());
