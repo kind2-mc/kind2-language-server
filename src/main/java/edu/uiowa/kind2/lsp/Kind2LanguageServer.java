@@ -14,8 +14,10 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 import org.eclipse.lsp4j.ConfigurationItem;
 import org.eclipse.lsp4j.ConfigurationParams;
@@ -433,7 +435,7 @@ public class Kind2LanguageServer
 
           // Add realizability info
           RealizabilityResult res = analysis.getRealizabilityResult();
-          json = json.substring(0, json.length() - 2) + ",\"realizabilityResult\": " + "\"" + res.toString() + "\"" + '}';
+          json = json.substring(0, json.length() - 2) + ",\"realizabilityResult\": " + "\"" + res.toString() + "\" ,"+ getConflictingSetOf(result)  + '}';
           analyses.add(json);
         }
         String json = "{\"name\": \"" + entry.getKey() + "\",\"analyses\": "
@@ -444,6 +446,20 @@ public class Kind2LanguageServer
     });
   }
 
+  private String getConflictingSetOf(Result result){
+    client.logMessage(new MessageParams(MessageType.Log, result.getJson()));
+    JsonArray json = JsonParser.parseString(result.getJson()).getAsJsonArray();
+    for( JsonElement ele : json){
+      JsonObject obj = ele.getAsJsonObject();
+      //checks need to be in order to avoid nulls
+      if(obj.has("objectType") && 
+         obj.get("objectType").getAsString().equals("realizabilityCheck") && 
+         obj.get("result").getAsString().equals("unrealizable")){
+            return "\"conflictingSet\" :" + obj.get("conflictingSet").getAsJsonObject().get("nodes").toString();
+      }
+    }
+    return "\"conflictingSet\" : []";
+  }
   @JsonRequest(value = "kind2/counterExample", useSegment = false)
   public CompletableFuture<String> counterExample(String uri, String component,
       List<String> abs, List<String> concrete, String property) {
