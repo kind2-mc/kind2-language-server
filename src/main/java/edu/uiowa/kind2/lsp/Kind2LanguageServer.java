@@ -8,6 +8,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -63,10 +64,12 @@ import edu.uiowa.cs.clc.kind2.Kind2Exception;
 import edu.uiowa.cs.clc.kind2.api.IProgressMonitor;
 import edu.uiowa.cs.clc.kind2.api.Kind2Api;
 import edu.uiowa.cs.clc.kind2.api.LogLevel;
+import edu.uiowa.cs.clc.kind2.api.MCSCategory;
 import edu.uiowa.cs.clc.kind2.api.Module;
 import edu.uiowa.cs.clc.kind2.api.SolverOption;
 import edu.uiowa.cs.clc.kind2.api.QESolverOption;
 import edu.uiowa.cs.clc.kind2.api.ITPSolverOption;
+import edu.uiowa.cs.clc.kind2.api.IVCCategory;
 import edu.uiowa.cs.clc.kind2.results.Analysis;
 import edu.uiowa.cs.clc.kind2.results.AstInfo;
 import edu.uiowa.cs.clc.kind2.results.ConstDeclInfo;
@@ -277,6 +280,80 @@ public class Kind2LanguageServer
     });
   }
 
+  @JsonRequest(value = "kind2/minimalCutSet", useSegment = false)
+  public CompletableFuture<List<String>> minimalCutSet(String uri, String name) {
+    return CompletableFutures.computeAsync(cancelToken -> {
+      client.logMessage(new MessageParams(MessageType.Info,
+          "Checking minimal cut sets of component " + name + " in " + uri + "..."));
+      analysisResults.get(uri).remove(name);
+      Result result = new Result();
+      IProgressMonitor monitor = new IProgressMonitor() {
+        @Override
+        public boolean isCanceled() {
+          return cancelToken == null ? false : cancelToken.isCanceled();
+        }
+
+        @Override
+        public void done() {
+        }
+      };
+
+      try {
+        if (workingDirectory == null) {
+          workingDirectory = client.workspaceFolders().get().get(0).getUri();
+        }
+        Kind2Api api = getCheckKind2Api(name, false);
+        api.enable(Module.MCS);
+        api.includeDir(Paths.get(new URI(uri)).getParent().toString());
+        String filepath = computeRelativeFilepath(workingDirectory, uri);
+        api.setFakeFilepath(filepath);
+        api.execute(getText(uri), 
+                            result, 
+                            monitor);
+      } catch (Kind2Exception | IOException | URISyntaxException
+          | InterruptedException | ExecutionException e) {
+        throw new ResponseErrorException(new ResponseError(
+            ResponseErrorCode.InternalError, e.getMessage(), e));
+      }
+
+      if (cancelToken.isCanceled()) {
+        client.logMessage(
+            new MessageParams(MessageType.Info, "MCS cancelled."));
+        // Throw an exception for the launcher to handle.
+        cancelToken.checkCanceled();
+      }
+
+      for (Map.Entry<String, NodeResult> entry : result.getResultMap()
+          .entrySet()) {
+        analysisResults.get(uri).put(entry.getKey(), entry.getValue());
+      }
+
+      List<Diagnostic> diagnostics = new ArrayList<>();
+      for (Log log : result.getAllKind2Logs()) {
+        Diagnostic diagnostic = logToDiagnostic(log);
+        if (diagnostic != null) {
+          diagnostics.add(diagnostic);
+        }
+      }
+      client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
+
+      checkLog(result);
+      List<String> mcss = new LinkedList<>();
+      for(JsonElement ele: JsonParser.parseString(result.getJson()).getAsJsonArray()){
+        JsonObject obj = ele.getAsJsonObject();
+        if(obj.get("objectType").getAsString().equals("modelElementSet")){
+          if(obj.get("class").getAsString().equals("mcs")){
+            mcss.add(obj.toString());
+          }
+        }
+      }
+
+      List<String> nodeResults = new ArrayList<>();
+      nodeResults.add("{\"mcsAnalysis\": " + mcss.toString() + "}");
+      return nodeResults;
+    });
+  }
+
   @JsonRequest(value = "kind2/check", useSegment = false)
   public CompletableFuture<List<String>> check(String uri, String name) {
     return CompletableFutures.computeAsync(cancelToken -> {
@@ -334,6 +411,20 @@ public class Kind2LanguageServer
       client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
 
       checkLog(result);
+      List<String> ivcs = new LinkedList<>();
+      String must = "";
+      for(JsonElement ele: JsonParser.parseString(result.getJson()).getAsJsonArray()){
+        JsonObject obj = ele.getAsJsonObject();
+        if(obj.get("objectType").getAsString().equals("modelElementSet")){
+          if(obj.get("class").getAsString().equals("ivc")){
+            ivcs.add(obj.toString());
+          } else if (obj.get("class").getAsString().equals("must")){
+            must = obj.toString();
+          }
+        }
+      }
+
+      client.logMessage(new MessageParams(MessageType.Info, "IVCS found: " + ivcs));
 
       List<String> nodeResults = new ArrayList<>();
 
@@ -352,7 +443,10 @@ public class Kind2LanguageServer
                   ResponseErrorCode.ParseError, e.getMessage(), e));
             }
           }).collect(Collectors.toList());
-          json = json + properties.toString() + '}';
+          json = json + properties.toString() + 
+                (ivcs.isEmpty() ? "" : (",\n \"ivcAnalysis\" : " + ivcs.toString())) +
+                (must.equals("") ? "" : (",\n \"ivcMust\" : " + must)) +
+                '}';
           analyses.add(json);
         }
         String json = "{\"name\": \"" + entry.getKey() + "\",\"analyses\": "
@@ -605,6 +699,41 @@ public class Kind2LanguageServer
     }
   }
 
+private MCSCategory stringToMCSCategory(String cat){
+    switch (cat) {
+      case "node_calls":
+        return MCSCategory.NODE_CALLS;
+      case "contracts":
+        return MCSCategory.CONTRACTS;
+      case "equations":
+        return MCSCategory.EQUATIONS;
+      case "assertions":
+        return MCSCategory.ASSERTIONS;
+      case "annotations":
+        return MCSCategory.ANNOTATIONS;
+      default:
+        throw new IllegalArgumentException("String given to helper function is not an IVC category");
+    }
+  }
+
+  private IVCCategory stringToIVCCategory(String cat){
+    switch (cat) {
+      case "node_calls":
+        return IVCCategory.NODECALLS;
+      case "contracts":
+        return IVCCategory.CONTRACTS;
+      case "equations":
+        return IVCCategory.EQUATIONS;
+      case "assertions":
+        return IVCCategory.ASSERTIONS;
+      case "annotations":
+        return IVCCategory.ANNOTATIONS;
+      default:
+        throw new IllegalArgumentException("String given to helper function is not an IVC category");
+    }
+  }
+
+
   private LogLevel stringToLevel(String level) {
     switch (level.toUpperCase()) {
     case "OFF":
@@ -703,6 +832,26 @@ public class Kind2LanguageServer
         .configuration(new ConfigurationParams(Arrays.asList(kind2Options)))
         .get().get(0);
     Kind2Api api = getPresetKind2Api();
+    
+    api.setIVC(configs.get("ivc").getAsBoolean());
+    api.setIVCMustSet(configs.get("ivc_must").getAsBoolean());
+    api.setIVCAll(configs.get("ivc_all").getAsBoolean());
+
+   
+    api.setMCSAll(configs.get("mcs_all").getAsBoolean());
+
+    for(JsonElement ele: configs.get("ivc_categories").getAsJsonArray()){
+      api.setIVCCategory(stringToIVCCategory(ele.getAsString()));
+    }
+    for(JsonElement ele: configs.get("mcs_categories").getAsJsonArray()){
+      api.setMCSCategory(stringToMCSCategory(ele.getAsString()));
+    }
+    api.setIVCUCTimeout(configs.get("ivc_uc_to").getAsInt());
+    api.setMinimizeProgram(configs.get("minimize_program").getAsString());
+
+
+    // Should potentially translate all api setting assignments to be like those above, unless its better to make less api method calls?
+
     if (!configs.get("smt").getAsJsonObject().get("check_sat_assume")
         .getAsBoolean()) {
       api.setCheckSatAssume(false);
