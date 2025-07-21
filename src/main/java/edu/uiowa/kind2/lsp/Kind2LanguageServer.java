@@ -424,7 +424,6 @@ public class Kind2LanguageServer
         }
       }
 
-      client.logMessage(new MessageParams(MessageType.Info, "IVCS found: " + ivcs));
 
       List<String> nodeResults = new ArrayList<>();
 
@@ -541,7 +540,6 @@ public class Kind2LanguageServer
   }
 
   private String getConflictingSetOf(Result result){
-    client.logMessage(new MessageParams(MessageType.Log, result.getJson()));
     JsonArray json = JsonParser.parseString(result.getJson()).getAsJsonArray();
     for( JsonElement ele : json){
       JsonObject obj = ele.getAsJsonObject();
@@ -833,22 +831,29 @@ private MCSCategory stringToMCSCategory(String cat){
         .get().get(0);
     Kind2Api api = getPresetKind2Api();
     
-    api.setIVC(configs.get("ivc").getAsBoolean());
-    api.setIVCMustSet(configs.get("ivc_must").getAsBoolean());
-    api.setIVCAll(configs.get("ivc_all").getAsBoolean());
 
+    //The settings below are not in the old version of the VS Code extension, the try-catch provides backwards compatibility.
+    try{
+      api.setIVC(configs.get("ivc").getAsBoolean());
+      api.setIVCMustSet(configs.get("ivc_must").getAsBoolean());
+      api.setIVCAll(configs.get("ivc_all").getAsBoolean());
+
+    
+      api.setMCSAll(configs.get("mcs_all").getAsBoolean());
+
+      for(JsonElement ele: configs.get("ivc_categories").getAsJsonArray()){
+        api.setIVCCategory(stringToIVCCategory(ele.getAsString()));
+      }
+      for(JsonElement ele: configs.get("mcs_categories").getAsJsonArray()){
+        api.setMCSCategory(stringToMCSCategory(ele.getAsString()));
+      }
+      api.setIVCUCTimeout(configs.get("ivc_uc_to").getAsInt());
+      api.setMinimizeProgram(configs.get("minimize_program").getAsString());
+
+    } catch (NullPointerException e) {
+      client.logMessage(new MessageParams(MessageType.Warning, "Old version of VS Code extension detected."));
+    }
    
-    api.setMCSAll(configs.get("mcs_all").getAsBoolean());
-
-    for(JsonElement ele: configs.get("ivc_categories").getAsJsonArray()){
-      api.setIVCCategory(stringToIVCCategory(ele.getAsString()));
-    }
-    for(JsonElement ele: configs.get("mcs_categories").getAsJsonArray()){
-      api.setMCSCategory(stringToMCSCategory(ele.getAsString()));
-    }
-    api.setIVCUCTimeout(configs.get("ivc_uc_to").getAsInt());
-    api.setMinimizeProgram(configs.get("minimize_program").getAsString());
-
 
     // Should potentially translate all api setting assignments to be like those above, unless its better to make less api method calls?
 
