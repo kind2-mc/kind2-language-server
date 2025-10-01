@@ -190,7 +190,6 @@ public class Kind2LanguageServer
         workingDirectory = client.workspaceFolders().get().get(0).getUri();
       }
       Kind2Api api = getPresetKind2Api();
-      api.setOldFrontend(false);
       api.setOnlyParse(true);
       api.setLsp(true);
       String filepath = computeRelativeFilepath(workingDirectory, uri);
