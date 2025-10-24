@@ -971,7 +971,12 @@ private MCSCategory stringToMCSCategory(String cat){
         CompletableFuture.runAsync(() -> {
           parse(uri);
           client.updateComponents(uri);
-        });
+        })
+        .exceptionally(ex -> {
+            client.showMessage(new MessageParams(MessageType.Error, "Fatal error during parsing: " + ex.getMessage()));
+            return null;
+        })
+        ;
       }
 
       @Override
@@ -982,7 +987,12 @@ private MCSCategory stringToMCSCategory(String cat){
         CompletableFuture.runAsync(() -> {
           parse(uri);
           client.updateComponents(uri);
-        });
+        })
+        .exceptionally(ex -> {
+            client.showMessage(new MessageParams(MessageType.Error, "Fatal error during parsing: " + ex.getMessage()));
+            return null;
+        })
+        ;
       }
 
       @Override
