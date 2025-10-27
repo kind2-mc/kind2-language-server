@@ -959,7 +959,9 @@ private MCSCategory stringToMCSCategory(String cat){
   @Override
   public void exit() {
   }
-
+  private static MessageParams getFatalErrorMessage(Throwable err){
+    return new MessageParams(MessageType.Error, "Fatal error during parsing: " + err.getMessage() + ".\nPlease report this issue on GitHub with this error message (https://github.com/kind2-mc/kind2-language-server/issues)");
+  }
   @Override
   public TextDocumentService getTextDocumentService() {
     return new TextDocumentService() {
@@ -973,7 +975,7 @@ private MCSCategory stringToMCSCategory(String cat){
           client.updateComponents(uri);
         })
         .exceptionally(ex -> {
-            client.showMessage(new MessageParams(MessageType.Error, "Fatal error during parsing: " + ex.getMessage()));
+            client.showMessage(getFatalErrorMessage(ex));
             return null;
         })
         ;
@@ -989,7 +991,7 @@ private MCSCategory stringToMCSCategory(String cat){
           client.updateComponents(uri);
         })
         .exceptionally(ex -> {
-            client.showMessage(new MessageParams(MessageType.Error, "Fatal error during parsing: " + ex.getMessage()));
+            client.showMessage(getFatalErrorMessage(ex));
             return null;
         })
         ;
