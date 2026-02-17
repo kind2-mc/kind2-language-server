@@ -527,7 +527,7 @@ public class Kind2LanguageServer
 
           // Add realizability info
           RealizabilityResult res = analysis.getRealizabilityResult();
-          json = json.substring(0, json.length() - 2) + ",\"realizabilityResult\": " + "\"" + res.toString() + "\" ,"+ getConflictingSetOf(result)  + '}';
+          json = json.substring(0, json.length() - 2) + ",\"realizabilityResult\": " + "\"" + res.toString() + "\" ,"+ getConflictingSetOf(result, analysis.getContext())  + '}';
           analyses.add(json);
         }
         String json = "{\"name\": \"" + entry.getKey() + "\",\"analyses\": "
@@ -538,15 +538,28 @@ public class Kind2LanguageServer
     });
   }
 
-  private String getConflictingSetOf(Result result){
+  private String getConflictingSetOf(Result result, String context){
     JsonArray json = JsonParser.parseString(result.getJson()).getAsJsonArray();
+    boolean inCorrectContext = false;
     for( JsonElement ele : json){
       JsonObject obj = ele.getAsJsonObject();
       //checks need to be in order to avoid nulls
-      if(obj.has("objectType") && 
+      if (!inCorrectContext && obj.has("objectType") && 
+         obj.get("objectType").getAsString().equals("analysisStart") && 
+         obj.has("context") && 
+         obj.get("context").getAsString().equals(context) )
+      {
+          inCorrectContext = true;
+      }
+      else if( inCorrectContext && obj.has("objectType") && 
          obj.get("objectType").getAsString().equals("realizabilityCheck") && 
-         obj.get("result").getAsString().equals("unrealizable")){
-            return "\"conflictingSet\" :" + obj.get("conflictingSet").getAsJsonObject().get("nodes").toString();
+         obj.get("result").getAsString().equals("unrealizable"))
+      {
+        return "\"conflictingSet\" :" + obj.get("conflictingSet").getAsJsonObject().get("nodes").toString();
+      } else if (obj.has("objectType") && 
+        obj.get("objectType").getAsString().equals("analysisStop"))
+      {
+        break;
       }
     }
     return "\"conflictingSet\" : []";
