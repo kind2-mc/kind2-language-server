@@ -5,6 +5,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -190,6 +191,7 @@ public class Kind2LanguageServer
         workingDirectory = client.workspaceFolders().get().get(0).getUri();
       }
       Kind2Api api = getPresetKind2Api();
+      if (api == null) return;
       api.setOnlyParse(true);
       api.setLsp(true);
       String filepath = computeRelativeFilepath(workingDirectory, uri);
@@ -792,10 +794,17 @@ private MCSCategory stringToMCSCategory(String cat){
     JsonObject configs = (JsonObject) this.client
         .configuration(new ConfigurationParams(Arrays.asList(kind2Options)))
         .get().get(0);
-    if (configs.get("kind2_path").getAsString().equals("")) {
+    String workspace_path = configs.get("kind2_path").getAsString(); 
+    if (workspace_path.equals("")) {
       Kind2Api.KIND2 = client.getDefaultKind2Path().get();
     } else {
-      Kind2Api.KIND2 = configs.get("kind2_path").getAsString();
+      Kind2Api.KIND2 = workspace_path;
+    }
+    Path p = Path.of(Kind2Api.KIND2);
+
+    if (!Files.exists(p) || !Files.isExecutable(p)) {
+        client.showMessage(new MessageParams(MessageType.Error, "Kind 2 executable not found at " + p));    
+        return null;
     }
     Kind2Api api = new Kind2Api();
     JsonObject smtConfigs = configs.get("smt").getAsJsonObject();
