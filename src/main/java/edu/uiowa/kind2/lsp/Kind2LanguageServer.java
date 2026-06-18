@@ -1077,7 +1077,7 @@ private MCSCategory stringToMCSCategory(String cat){
                   kind = SymbolKind.Interface;
                 } else if (info instanceof LemmaInfo) {
                   kind = SymbolKind.Function;
-                }else {
+                } else {
                   kind = null;
                 }
                 symbols.add(Either.forRight(
