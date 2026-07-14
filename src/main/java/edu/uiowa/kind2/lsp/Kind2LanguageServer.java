@@ -76,6 +76,7 @@ import edu.uiowa.cs.clc.kind2.results.AstInfo;
 import edu.uiowa.cs.clc.kind2.results.ConstDeclInfo;
 import edu.uiowa.cs.clc.kind2.results.ContractInfo;
 import edu.uiowa.cs.clc.kind2.results.FunctionInfo;
+import edu.uiowa.cs.clc.kind2.results.LemmaInfo;
 import edu.uiowa.cs.clc.kind2.results.Log;
 import edu.uiowa.cs.clc.kind2.results.NodeInfo;
 import edu.uiowa.cs.clc.kind2.results.NodeResult;
@@ -267,7 +268,7 @@ public class Kind2LanguageServer
       if (parseResults.containsKey(uri)) {
         try {
           for (AstInfo info : parseResults.get(uri).getAstInfos()) {
-            if (info instanceof NodeInfo || info instanceof FunctionInfo || info instanceof TypeDeclInfo || info instanceof ConstDeclInfo) {
+            if (info instanceof NodeInfo || info instanceof FunctionInfo || info instanceof TypeDeclInfo || info instanceof ConstDeclInfo || info instanceof LemmaInfo) {
               client.logMessage(new MessageParams(MessageType.Info, info.getJson()));
               components.add(replacePathWithUri(info.getJson(), uri,
                   info.getFile() == null ? new URI(uri).getPath()
@@ -973,13 +974,14 @@ private MCSCategory stringToMCSCategory(String cat){
         api.setLusMainConst(name);
         break;
       case "nodeDecl":
+      case "lemmaDecl":
         api.setLusMain(name);
         break;
       case "typeDecl":
         api.setLusMainType(name);
         break;
       default:
-        throw new RuntimeException("Component kind must be of the type \"constDecl\",\"paramDecl\",\"typeDecl\", or \"nodeDecl\". Got " + compKind);
+        throw new RuntimeException("Component kind must be of the type \"constDecl\",\"paramDecl\",\"typeDecl\",\"lemmaDecl\", or \"nodeDecl\". Got " + compKind);
     }
     return api;
   }
@@ -1111,6 +1113,8 @@ private MCSCategory stringToMCSCategory(String cat){
                   kind = SymbolKind.Function;
                 } else if (info instanceof ContractInfo) {
                   kind = SymbolKind.Interface;
+                } else if (info instanceof LemmaInfo) {
+                  kind = SymbolKind.Function;
                 } else {
                   kind = null;
                 }
