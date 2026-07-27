@@ -569,11 +569,13 @@ public class Kind2LanguageServer
           String json = analysis.getJson();
 
           // Add realizability info
+          json = json.substring(0, json.length() - 2) ;
           RealizabilityResult res = analysis.getRealizabilityResult();
           if (res != null){
-            json = json.substring(0, json.length() - 2) + ",\"realizabilityResult\": " + "\"" + res.toString() + "\" ,"+ getConflictingSetOf(result, analysis.getContext())  + '}';
-            analyses.add(json);
+            json = json + ",\"realizabilityResult\": " + "\"" + res.toString() + "\" ,"+ getConflictingSetOf(result, analysis.getContext()) ;
           }
+          json += '}';
+          analyses.add(json);
         }
         String json = "{\"name\": \"" + entry.getKey() + "\",\"analyses\": "
             + analyses.toString() + "}";
