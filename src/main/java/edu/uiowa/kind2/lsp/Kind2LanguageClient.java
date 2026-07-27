@@ -1,5 +1,6 @@
 package edu.uiowa.kind2.lsp;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 import org.eclipse.lsp4j.jsonrpc.services.JsonNotification;
@@ -28,4 +29,23 @@ interface Kind2LanguageClient extends LanguageClient {
    */
   @JsonRequest("kind2/getDefaultZ3Path")
   CompletableFuture<String> getDefaultZ3Path();
+
+
+  @JsonNotification("kind2/checkResultUpdate")
+  void checkResultUpdate(String uri, String name, List<String> values);
+
+  @JsonNotification("kind2/checkComplete")
+  void checkComplete(String uri, String name);
+
+  @JsonNotification("kind2/minimalCutSetResultUpdate")
+  void minimalCutSetResultUpdate(String uri, String name, List<String> values);
+
+  @JsonNotification("kind2/minimalCutSetComplete")
+  void minimalCutSetComplete(String uri, String name);
+
+  @JsonNotification("kind2/realizabilityResultUpdate")
+  void realizabilityResultUpdate(String uri, String name, List<String> values);
+
+  @JsonNotification("kind2/realizabilityComplete")
+  void realizabilityComplete(String uri, String name);
 }

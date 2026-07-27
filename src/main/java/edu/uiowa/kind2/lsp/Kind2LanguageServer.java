@@ -84,6 +84,7 @@ import edu.uiowa.cs.clc.kind2.results.Property;
 import edu.uiowa.cs.clc.kind2.results.Result;
 import edu.uiowa.cs.clc.kind2.results.RealizabilityResult;
 import edu.uiowa.cs.clc.kind2.results.TypeDeclInfo;
+import edu.uiowa.cs.clc.kind2.api.ResultListener;
 
 /**
  * LanguageServer
@@ -301,6 +302,13 @@ public class Kind2LanguageServer
         }
       };
 
+      ResultListener listener = new ResultListener() {
+          public void onUpdate(Result result){
+            List<String> json = handleMCSResult(result, uri);
+            client.minimalCutSetResultUpdate(uri, name,json);
+          } 
+        };
+
       try {
         if (workingDirectory == null) {
           workingDirectory = client.workspaceFolders().get().get(0).getUri();
@@ -312,7 +320,8 @@ public class Kind2LanguageServer
         api.setFakeFilepath(filepath);
         api.execute(getText(uri), 
                             result, 
-                            monitor);
+                            monitor,
+                            listener);
       } catch (Kind2Exception | IOException | URISyntaxException
           | InterruptedException | ExecutionException e) {
         throw new ResponseErrorException(new ResponseError(
@@ -325,8 +334,13 @@ public class Kind2LanguageServer
         // Throw an exception for the launcher to handle.
         cancelToken.checkCanceled();
       }
+      client.minimalCutSetComplete(uri, name);
+      return handleMCSResult(result, uri);
+    });
+  }
 
-      for (Map.Entry<String, NodeResult> entry : result.getResultMap()
+  private List<String> handleMCSResult(Result result, String uri){
+    for (Map.Entry<String, NodeResult> entry : result.getResultMap()
           .entrySet()) {
         analysisResults.get(uri).put(entry.getKey(), entry.getValue());
       }
@@ -354,7 +368,6 @@ public class Kind2LanguageServer
       List<String> nodeResults = new ArrayList<>();
       nodeResults.add("{\"mcsAnalysis\": " + mcss.toString() + "}");
       return nodeResults;
-    });
   }
 
   @JsonRequest(value = "kind2/check", useSegment = false)
@@ -382,10 +395,20 @@ public class Kind2LanguageServer
         Kind2Api api = getCheckKind2Api(name, compKind);
         api.includeDir(Paths.get(new URI(uri)).getParent().toString());
         String filepath = computeRelativeFilepath(workingDirectory, uri);
+
+        ResultListener listener = new ResultListener() {
+          public void onUpdate(Result result){
+            List<String> json = handleCheckResult(result, uri);
+            client.checkResultUpdate(uri, name,json);
+          } 
+        };
+
         api.setFakeFilepath(filepath);
         api.execute(getText(uri), 
                             result, 
-                            monitor);
+                            monitor,
+                            listener
+                          );
       } catch (Kind2Exception | IOException | URISyntaxException
           | InterruptedException | ExecutionException e) {
         throw new ResponseErrorException(new ResponseError(
@@ -398,7 +421,13 @@ public class Kind2LanguageServer
         // Throw an exception for the launcher to handle.
         cancelToken.checkCanceled();
       }
+      client.checkComplete(uri, name);
+      return handleCheckResult(result, uri);
+    });
+  }
 
+  private List<String> handleCheckResult(Result result, String uri) {
+    
       for (Map.Entry<String, NodeResult> entry : result.getResultMap()
           .entrySet()) {
         analysisResults.get(uri).put(entry.getKey(), entry.getValue());
@@ -457,9 +486,7 @@ public class Kind2LanguageServer
       }
 
       return nodeResults;
-    });
   }
-
   @JsonRequest(value = "kind2/realizability", useSegment = false)
   public CompletableFuture<List<String>> realizability(String uri, String name, String compKind) {
     return CompletableFutures.computeAsync(cancelToken -> {
@@ -477,6 +504,13 @@ public class Kind2LanguageServer
         public void done() {
         }
       };
+      ResultListener listener = new ResultListener() {
+          public void onUpdate(Result result){
+            List<String> json = handleRealizabilityResult(result, uri);
+            client.realizabilityResultUpdate(uri, name, json);
+          } 
+        };
+
 
       try {
         if (workingDirectory == null) {
@@ -486,12 +520,11 @@ public class Kind2LanguageServer
         api.includeDir(Paths.get(new URI(uri)).getParent().toString());
         String filepath = computeRelativeFilepath(workingDirectory, uri);
         api.setFakeFilepath(filepath);
-        ArrayList<Module> options = new ArrayList<>();
-        options.add(Module.CONTRACTCK);
+        api.enable(Module.CONTRACTCK);
         api.execute(getText(uri), 
                             result, 
                             monitor,
-                            options);
+                            listener);
       } catch (Kind2Exception | IOException | URISyntaxException
           | InterruptedException | ExecutionException e) {
         throw new ResponseErrorException(new ResponseError(
@@ -504,8 +537,14 @@ public class Kind2LanguageServer
         // Throw an exception for the launcher to handle.
         cancelToken.checkCanceled();
       }
+      client.realizabilityComplete(uri, name);
+      return handleRealizabilityResult(result, uri);
+      
+    });
+  }
 
-      for (Map.Entry<String, NodeResult> entry : result.getResultMap()
+  private List<String> handleRealizabilityResult(Result result, String uri){
+    for (Map.Entry<String, NodeResult> entry : result.getResultMap()
           .entrySet()) {
         analysisResults.get(uri).put(entry.getKey(), entry.getValue());
       }
@@ -530,8 +569,12 @@ public class Kind2LanguageServer
           String json = analysis.getJson();
 
           // Add realizability info
+          json = json.substring(0, json.length() - 2) ;
           RealizabilityResult res = analysis.getRealizabilityResult();
-          json = json.substring(0, json.length() - 2) + ",\"realizabilityResult\": " + "\"" + res.toString() + "\" ,"+ getConflictingSetOf(result, analysis.getContext())  + '}';
+          if (res != null){
+            json = json + ",\"realizabilityResult\": " + "\"" + res.toString() + "\" ,"+ getConflictingSetOf(result, analysis.getContext()) ;
+          }
+          json += '}';
           analyses.add(json);
         }
         String json = "{\"name\": \"" + entry.getKey() + "\",\"analyses\": "
@@ -539,7 +582,6 @@ public class Kind2LanguageServer
         nodeResults.add(json);
       }
       return nodeResults;
-    });
   }
 
   private String getConflictingSetOf(Result result, String context){
@@ -943,7 +985,7 @@ private MCSCategory stringToMCSCategory(String cat){
         api.setLusMainType(name);
         break;
       default:
-        throw new RuntimeException("Component kind must be of the type \"constDecl\",\"paramDecl\",\"typeDecl\", or \"nodeDecl\". Got " + compKind);
+        throw new RuntimeException("Component kind must be of the type \"constDecl\",\"paramDecl\",\"typeDecl\",\"lemmaDecl\", or \"nodeDecl\". Got " + compKind);
     }
     return api;
   }
