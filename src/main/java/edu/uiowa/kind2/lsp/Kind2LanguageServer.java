@@ -334,7 +334,8 @@ public class Kind2LanguageServer
         // Throw an exception for the launcher to handle.
         cancelToken.checkCanceled();
       }
-      return handleCheckResult(result, uri);
+      client.minimalCutSetComplete(uri, name);
+      return handleMCSResult(result, uri);
     });
   }
 
@@ -536,6 +537,7 @@ public class Kind2LanguageServer
         // Throw an exception for the launcher to handle.
         cancelToken.checkCanceled();
       }
+      client.realizabilityComplete(uri, name);
       return handleRealizabilityResult(result, uri);
       
     });
