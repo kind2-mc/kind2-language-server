@@ -7,3 +7,4 @@ bin
 build
 /lib
 build-and-copy.sh
+src/web/node_modules

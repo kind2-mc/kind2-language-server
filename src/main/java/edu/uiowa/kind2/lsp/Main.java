@@ -10,6 +10,8 @@ import org.eclipse.lsp4j.services.LanguageClientAware;
 import org.eclipse.lsp4j.services.LanguageServer;
 
 public class Main {
+  private static final String GATEWAY_LOOPBACK_HOST = "127.0.0.1";
+
   public static void main(String[] args) {
     try {
       LanguageServer server = new Kind2LanguageServer();
@@ -21,7 +23,8 @@ public class Main {
         }
         launcher.startListening().get();
       } else {
-        Socket socket = new Socket("localhost", Integer.parseInt(args[0]));
+        int port = Integer.parseInt(args[0]);
+        Socket socket = new Socket(GATEWAY_LOOPBACK_HOST, port);
         Launcher<Kind2LanguageClient> launcher = new LSPLauncher.Builder<Kind2LanguageClient>().setLocalService(server)
             .setRemoteInterface(Kind2LanguageClient.class).setInput(socket.getInputStream())
             .setOutput(socket.getOutputStream()).create();

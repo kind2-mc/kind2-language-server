@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -15,11 +14,6 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
-
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 
 import org.eclipse.lsp4j.ConfigurationItem;
 import org.eclipse.lsp4j.ConfigurationParams;
@@ -46,6 +40,7 @@ import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.SaveOptions;
 import org.eclipse.lsp4j.ServerCapabilities;
+import org.eclipse.lsp4j.SetTraceParams;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.SymbolKind;
 import org.eclipse.lsp4j.TextDocumentSyncKind;
@@ -61,16 +56,22 @@ import org.eclipse.lsp4j.services.LanguageClientAware;
 import org.eclipse.lsp4j.services.TextDocumentService;
 import org.eclipse.lsp4j.services.WorkspaceService;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
 import edu.uiowa.cs.clc.kind2.Kind2Exception;
 import edu.uiowa.cs.clc.kind2.api.IProgressMonitor;
+import edu.uiowa.cs.clc.kind2.api.ITPSolverOption;
+import edu.uiowa.cs.clc.kind2.api.IVCCategory;
 import edu.uiowa.cs.clc.kind2.api.Kind2Api;
 import edu.uiowa.cs.clc.kind2.api.LogLevel;
 import edu.uiowa.cs.clc.kind2.api.MCSCategory;
 import edu.uiowa.cs.clc.kind2.api.Module;
-import edu.uiowa.cs.clc.kind2.api.SolverOption;
 import edu.uiowa.cs.clc.kind2.api.QESolverOption;
-import edu.uiowa.cs.clc.kind2.api.ITPSolverOption;
-import edu.uiowa.cs.clc.kind2.api.IVCCategory;
+import edu.uiowa.cs.clc.kind2.api.ResultListener;
+import edu.uiowa.cs.clc.kind2.api.SolverOption;
 import edu.uiowa.cs.clc.kind2.results.Analysis;
 import edu.uiowa.cs.clc.kind2.results.AstInfo;
 import edu.uiowa.cs.clc.kind2.results.ConstDeclInfo;
@@ -81,10 +82,9 @@ import edu.uiowa.cs.clc.kind2.results.Log;
 import edu.uiowa.cs.clc.kind2.results.NodeInfo;
 import edu.uiowa.cs.clc.kind2.results.NodeResult;
 import edu.uiowa.cs.clc.kind2.results.Property;
-import edu.uiowa.cs.clc.kind2.results.Result;
 import edu.uiowa.cs.clc.kind2.results.RealizabilityResult;
+import edu.uiowa.cs.clc.kind2.results.Result;
 import edu.uiowa.cs.clc.kind2.results.TypeDeclInfo;
-import edu.uiowa.cs.clc.kind2.api.ResultListener;
 
 /**
  * LanguageServer
@@ -96,7 +96,6 @@ public class Kind2LanguageServer
   private Map<String, String> openDocuments;
   private Map<String, Result> parseResults;
   private Map<String, Map<String, NodeResult>> analysisResults;
-  private String workingDirectory;
 
   public Kind2LanguageServer() {
     client = null;
@@ -105,14 +104,28 @@ public class Kind2LanguageServer
     analysisResults = new HashMap<>();
     Result.setOpeningSymbols("");
     Result.setClosingSymbols("");
-    workingDirectory = null;
   }
 
   public String getText(String uri) throws IOException, URISyntaxException {
     if (openDocuments.containsKey(uri)) {
       return openDocuments.get(uri);
     }
-    return Files.readString(Paths.get(new URI(uri)));
+    throw new IOException("File not open: " + uri);
+  }
+
+  private void configureIncludeContext(Kind2Api api, String uri)
+      throws URISyntaxException {
+    URI documentUri = new URI(uri);
+    if (!"file".equalsIgnoreCase(documentUri.getScheme())) {
+      return;
+    }
+
+    Path documentPath = Path.of(documentUri);
+    Path parent = documentPath.getParent();
+    if (parent != null) {
+      api.includeDir(parent.toString());
+    }
+    api.setFakeFilepath(documentPath.toString());
   }
 
   void checkLog(Result result) throws ResponseErrorException {
@@ -165,19 +178,6 @@ public class Kind2LanguageServer
     return new Diagnostic(new Range(new Position(0, 0), new Position(0, 0)),
         log.getValue(), ds, "Kind 2: " + log.getSource());
   }
-
-  /**
-   * Compute a relative filepath from the working directory and file URI,
-   * both as absolute filepaths.
-   * 
-   * @param workingDirectory the current working directory
-   * @param uri the uri of the lustre file
-   */
-  private String computeRelativeFilepath(String workingDirectory, String uri) {
-    return Paths.get(URI.create(workingDirectory)).relativize(
-                 Paths.get(URI.create(uri)))
-                 .toString();
-  }
   
   /**
    * Call Kind 2 to parse a lustre file and check for syntax errors.
@@ -189,16 +189,11 @@ public class Kind2LanguageServer
 
     // ignore exceptions from syntax errors
     try {
-      if (workingDirectory == null) {
-        workingDirectory = client.workspaceFolders().get().get(0).getUri();
-      }
       Kind2Api api = getPresetKind2Api();
       if (api == null) return;
+      configureIncludeContext(api, uri);
       api.setOnlyParse(true);
       api.setLsp(true);
-      String filepath = computeRelativeFilepath(workingDirectory, uri);
-      api.setFakeFilepath(filepath);
-      api.includeDir(Paths.get(new URI(uri)).getParent().toString());
       parseResults.put(uri, api.execute(getText(uri)));
     } catch (Kind2Exception | URISyntaxException | IOException
         | InterruptedException | ExecutionException e) {
@@ -243,27 +238,76 @@ public class Kind2LanguageServer
         .logMessage(new MessageParams(MessageType.Info, "Server initialized."));
   }
 
+  @Override
+  public void setTrace(SetTraceParams params) {
+    // Trace negotiation is optional for this server. Ignore it to avoid
+    // throwing UnsupportedOperationException from the default interface method.
+  }
+
   private String replacePathWithUri(String json, String mainUri, String path)
       throws URISyntaxException {
-    String uri = Paths.get(new URI(mainUri)).getParent().resolve(path)
-        .normalize().toUri().toString();
-    if (json.contains("\"file\":")) {
-      int l = json.indexOf("\"file\":");
-      int r = json.indexOf('\"', l + 9) + 1;
-      if (json.charAt(r) == ',') {
-        r += 1;
+    JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
+    URI base = new URI(mainUri);
+    URI resolved;
+
+    if (path == null || path.isBlank()) {
+      resolved = base;
+    } else {
+      URI candidate;
+      try {
+        candidate = new URI(path);
+      } catch (URISyntaxException e) {
+        candidate = null;
       }
-      json = json.replace(json.substring(l, r), "");
+
+      if (candidate != null && candidate.isAbsolute()
+          && candidate.getScheme() != null
+          // Reject windows drive letter as URI scheme
+          && candidate.getScheme().length() > 1) {
+        resolved = candidate;
+      } else if ("file".equalsIgnoreCase(base.getScheme())) {
+        try {
+          Path p = Path.of(path);
+          resolved = (p.isAbsolute() ? p : Path.of(base).resolveSibling(path)).toUri();
+        } catch (IllegalArgumentException e) {
+          // Covers InvalidPathException for characters the platform disallows.
+          throw new URISyntaxException(path, "This path is not a valid file path");
+        }
+      } else {
+        try {
+          resolved = base.resolve(path);
+        } catch (IllegalArgumentException e) {
+          throw new URISyntaxException(path, "This path is not a valid URI");
+        }
+      }
     }
-    return json.substring(0, json.length() - 2) + ",\"file\": \"" + uri + "\"}";
+
+    URI normalized = resolved.normalize();
+    if ("file".equalsIgnoreCase(normalized.getScheme())) {
+      normalized = new URI(normalized.getScheme(), "", normalized.getPath(),
+          normalized.getQuery(), normalized.getFragment());
+    }
+
+    // toASCIIString so non-ASCII names are percent-encoded the way clients
+    // spell them (VS Code's Uri.toString()).
+    obj.addProperty("file", normalized.toASCIIString());
+    return obj.toString();
   }
 
   /**
    * @return the components
    */
   @JsonRequest(value = "kind2/getComponents", useSegment = false)
-  public CompletableFuture<List<String>> getComponents(String uri) {
+  public CompletableFuture<List<String>> getComponents(JsonElement params) {
+    client.logMessage(new MessageParams(MessageType.Info, "Getting components..."));
     return CompletableFuture.supplyAsync(() -> {
+      String uri = extractSingleStringParam(params, "kind2/getComponents");
+
+      if (uri == null) {
+        throw new ResponseErrorException(new ResponseError(
+            ResponseErrorCode.InvalidParams, "Expected a single URI string parameter", null));
+      }
+
       List<String> components = new ArrayList<>();
       if (parseResults.containsKey(uri)) {
         try {
@@ -271,17 +315,41 @@ public class Kind2LanguageServer
             if (info instanceof NodeInfo || info instanceof FunctionInfo || info instanceof TypeDeclInfo || info instanceof ConstDeclInfo || info instanceof LemmaInfo) {
               client.logMessage(new MessageParams(MessageType.Info, info.getJson()));
               components.add(replacePathWithUri(info.getJson(), uri,
-                  info.getFile() == null ? new URI(uri).getPath()
-                      : info.getFile()));
+                  info.getFile()));
             }
           }
         } catch (URISyntaxException e) {
           throw new ResponseErrorException(new ResponseError(
-              ResponseErrorCode.ParseError, e.getMessage(), e));
+              ResponseErrorCode.InternalError, "Failed to resolve component URI: " + e.getMessage(), e));
         }
       }
       return components;
     });
+  }
+
+  private String extractSingleStringParam(JsonElement params, String methodName) {
+    if (params == null || params.isJsonNull()) {
+      return null;
+    }
+
+    if (params.isJsonPrimitive() && params.getAsJsonPrimitive().isString()) {
+      return params.getAsString();
+    }
+
+    if (params.isJsonArray()) {
+      JsonArray array = params.getAsJsonArray();
+      if (array.size() == 1) {
+        JsonElement first = array.get(0);
+        if (first != null && first.isJsonPrimitive() && first.getAsJsonPrimitive().isString()) {
+          return first.getAsString();
+        }
+      }
+    }
+
+    throw new ResponseErrorException(new ResponseError(
+        ResponseErrorCode.InvalidParams,
+        "Invalid parameters for " + methodName + ": expected a single string or a one-element array",
+        null));
   }
 
   @JsonRequest(value = "kind2/minimalCutSet", useSegment = false)
@@ -310,14 +378,10 @@ public class Kind2LanguageServer
         };
 
       try {
-        if (workingDirectory == null) {
-          workingDirectory = client.workspaceFolders().get().get(0).getUri();
-        }
         Kind2Api api = getCheckKind2Api(name, compKind);
+        configureIncludeContext(api, uri);
+
         api.enable(Module.MCS);
-        api.includeDir(Paths.get(new URI(uri)).getParent().toString());
-        String filepath = computeRelativeFilepath(workingDirectory, uri);
-        api.setFakeFilepath(filepath);
         api.execute(getText(uri), 
                             result, 
                             monitor,
@@ -389,13 +453,8 @@ public class Kind2LanguageServer
       };
 
       try {
-        if (workingDirectory == null) {
-          workingDirectory = client.workspaceFolders().get().get(0).getUri();
-        }
         Kind2Api api = getCheckKind2Api(name, compKind);
-        api.includeDir(Paths.get(new URI(uri)).getParent().toString());
-        String filepath = computeRelativeFilepath(workingDirectory, uri);
-
+        configureIncludeContext(api, uri);
         ResultListener listener = new ResultListener() {
           public void onUpdate(Result result){
             List<String> json = handleCheckResult(result, uri);
@@ -403,7 +462,6 @@ public class Kind2LanguageServer
           } 
         };
 
-        api.setFakeFilepath(filepath);
         api.execute(getText(uri), 
                             result, 
                             monitor,
@@ -467,11 +525,10 @@ public class Kind2LanguageServer
           json = json.substring(0, json.length() - 2) + ",\"properties\": ";
           List<String> properties = analysis.getProperties().stream().map(p -> {
             try {
-              return replacePathWithUri(p.getJson(), uri,
-                  p.getFile() == null ? new URI(uri).getPath() : p.getFile());
+              return replacePathWithUri(p.getJson(), uri, p.getFile());
             } catch (URISyntaxException e) {
               throw new ResponseErrorException(new ResponseError(
-                  ResponseErrorCode.ParseError, e.getMessage(), e));
+                  ResponseErrorCode.InternalError, "Failed to resolve property URI: " + e.getMessage(), e));
             }
           }).collect(Collectors.toList());
           json = json + properties.toString() + 
@@ -513,13 +570,8 @@ public class Kind2LanguageServer
 
 
       try {
-        if (workingDirectory == null) {
-          workingDirectory = client.workspaceFolders().get().get(0).getUri();
-        }
         Kind2Api api = getCheckKind2Api(name, compKind);
-        api.includeDir(Paths.get(new URI(uri)).getParent().toString());
-        String filepath = computeRelativeFilepath(workingDirectory, uri);
-        api.setFakeFilepath(filepath);
+        configureIncludeContext(api, uri);
         api.enable(Module.CONTRACTCK);
         api.execute(getText(uri), 
                             result, 
@@ -851,12 +903,32 @@ private MCSCategory stringToMCSCategory(String cat){
     JsonObject configs = (JsonObject) this.client
         .configuration(new ConfigurationParams(Arrays.asList(kind2Options)))
         .get().get(0);
-    String workspace_path = configs.get("kind2_path").getAsString(); 
-    if (workspace_path.equals("")) {
-      Kind2Api.KIND2 = client.getDefaultKind2Path().get();
-    } else {
-      Kind2Api.KIND2 = workspace_path;
+
+    String configuredPath = null;
+    if (configs.has("kind2_path") && !configs.get("kind2_path").isJsonNull()) {
+      configuredPath = configs.get("kind2_path").getAsString();
     }
+
+    Path projectRootKind2 = Path.of(System.getProperty("user.dir"), "kind2");
+    if (configuredPath != null && !configuredPath.isBlank()) {
+      // Respect explicit user configuration even if the target is temporarily missing.
+      Kind2Api.KIND2 = configuredPath;
+    } else {
+      String inferredPath = client.getDefaultKind2Path().get();
+
+      if (inferredPath.startsWith("/static/devextensions/")) {
+        Kind2Api.KIND2 = projectRootKind2.toString();
+      } else {
+        Kind2Api.KIND2 = inferredPath;
+      }
+    }
+
+    if (Kind2Api.KIND2 == null || Kind2Api.KIND2.isBlank()) {
+      client.showMessage(new MessageParams(MessageType.Error,
+          "Kind 2 executable path is blank. Set kind2.kind2_path in settings."));
+      return null;
+    }
+
     Path p = Path.of(Kind2Api.KIND2);
 
     if (!Files.exists(p) || !Files.isExecutable(p)) {
@@ -996,9 +1068,7 @@ private MCSCategory stringToMCSCategory(String cat){
     return CompletableFuture.supplyAsync(() -> {
       try {
         Kind2Api api = getPresetKind2Api();
-        api.includeDir(Paths.get(new URI(uri)).getParent().toString());
-        String filepath = computeRelativeFilepath(workingDirectory, uri);
-        api.setFakeFilepath(filepath);
+        configureIncludeContext(api, uri);
         return api.interpret(getText(uri), main, json);
       } catch (URISyntaxException | InterruptedException
           | ExecutionException | IOException e) {
@@ -1013,6 +1083,7 @@ private MCSCategory stringToMCSCategory(String cat){
     return CompletableFuture.supplyAsync(() -> {
       try {
         Kind2Api api = getCheckKind2Api(main, "nodeDecl");
+        configureIncludeContext(api, uri);
         List<String> cmd = api.getOptions();
         cmd.set(0, Kind2Api.KIND2);
         cmd.add(new URI(uri).getPath());

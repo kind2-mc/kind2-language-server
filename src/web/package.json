@@ -1,0 +1,12 @@
+{
+  "name": "kind2-language-server-web",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node kind2-gateway.cjs",
+    "build-run": "cd ../.. && ./gradlew build && ./gradlew install && cd src/web && node kind2-gateway.cjs"
+  },
+  "dependencies": {
+    "ws": "^8.21.1"
+  }
+}
