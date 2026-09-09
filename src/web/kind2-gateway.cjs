@@ -7,10 +7,14 @@ const WEBSOCKET_PORT = 3001;
 const WEBSOCKET_HOST = '127.0.0.1';
 const WEBSOCKET_PATH = '/lsp';
 
-const DEFAULT_ALLOWED_ORIGINS = new Set([
+const DEFAULT_ALLOWED_ORIGINS = [
+  'https://vscode.dev',
+  'https://insiders.vscode.dev',
+  'https://github.dev',
   'http://127.0.0.1:3000',
-  'http://localhost:3000'
-]);
+  'http://localhost:3000',
+  'http://localhost'
+];
 
 const ALLOWED_ORIGINS =
   parseAllowedOrigins(
@@ -48,8 +52,10 @@ console.log(
 
 console.log(
   'Allowed WebSocket origins:',
-  Array.from(ALLOWED_ORIGINS).join(', ')
-);
+  ALLOWED_ORIGINS
+    .map(formatOriginRule)
+    .join(', ')
+  );
 
 webSocketServer.on('connection', webSocket => {
   console.log('Browser connected');
@@ -337,14 +343,57 @@ function parseAllowedOrigins(value) {
     return null;
   }
 
-  return new Set(origins);
+  return origins.map(parseOriginRule);
+}
+
+function parseOriginRule(origin) {
+  const regexLiteralMatch =
+    /^\/(.+)\/([a-z]*)$/i.exec(origin);
+
+  if (regexLiteralMatch === null) {
+    return origin;
+  }
+
+  try {
+    return new RegExp(
+      regexLiteralMatch[1],
+      regexLiteralMatch[2]
+    );
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : String(error);
+
+    console.warn(
+      `Ignoring invalid origin regex ${origin}: ${errorMessage}`
+    );
+
+    return origin;
+  }
+}
+
+function formatOriginRule(rule) {
+  if (rule instanceof RegExp) {
+    return `/${rule.source}/${rule.flags}`;
+  }
+
+  return rule;
 }
 
 function isAllowedOrigin(origin) {
-  return (
-    typeof origin === 'string' &&
-    ALLOWED_ORIGINS.has(origin)
-  );
+  if (typeof origin !== 'string') {
+    return false;
+  }
+
+  return ALLOWED_ORIGINS.some(rule => {
+    if (rule instanceof RegExp) {
+      rule.lastIndex = 0;
+      return rule.test(origin);
+    }
+
+    return rule === origin;
+  });
 }
 
 function summarizeMessage(json) {
