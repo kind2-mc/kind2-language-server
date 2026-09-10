@@ -3,6 +3,7 @@ package edu.uiowa.kind2.lsp;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.Path;
@@ -110,7 +111,7 @@ public class Kind2LanguageServer
     if (openDocuments.containsKey(uri)) {
       return openDocuments.get(uri);
     }
-    return Files.readString(Paths.get(new URI(uri)));
+    return new String(Files.readAllBytes(Paths.get(new URI(uri))), StandardCharsets.UTF_8);
   }
 
   void checkLog(Result result) throws ResponseErrorException {
@@ -823,7 +824,7 @@ private MCSCategory stringToMCSCategory(String cat){
     } else {
       Kind2Api.KIND2 = workspace_path;
     }
-    Path p = Path.of(Kind2Api.KIND2);
+    Path p = Paths.get(Kind2Api.KIND2);
 
     if (!Files.exists(p) || !Files.isExecutable(p)) {
         client.showMessage(new MessageParams(MessageType.Error, "Kind 2 executable not found at " + p));    
@@ -980,7 +981,7 @@ private MCSCategory stringToMCSCategory(String cat){
         Kind2Api api = getCheckKind2Api(main, "nodeDecl");
         List<String> cmd = api.getOptions();
         cmd.set(0, Kind2Api.KIND2);
-        cmd.add(new URI(uri).getPath());
+        cmd.add(Paths.get(new URI(uri)).toString());
         return cmd;
       } catch (InterruptedException | ExecutionException
           | URISyntaxException e) {
@@ -1095,7 +1096,7 @@ private MCSCategory stringToMCSCategory(String cat){
       }
 
       private String getSymbolName(String text, Position pos) {
-        List<String> lines = text.lines().collect(Collectors.toList());
+        List<String> lines = Arrays.asList(text.split("\r\n|\r|\n", -1));
         String line = lines.get(pos.getLine());
         if (pos.getCharacter() == line.length()) {
           return "";
