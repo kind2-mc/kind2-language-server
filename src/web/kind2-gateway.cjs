@@ -6,7 +6,14 @@ const { WebSocketServer, WebSocket } = require('ws');
 const WEBSOCKET_PORT = 3001;
 const WEBSOCKET_HOST = '127.0.0.1';
 const WEBSOCKET_PATH = '/lsp';
-
+const KIND2_PATH = pickEnvValue(
+  process.env.KIND2_PATH,
+  'kind2'
+);
+const KIND2_Z3_BIN = pickEnvValue(
+  process.env.KIND2_Z3_BIN,
+  'z3'
+);
 const DEFAULT_ALLOWED_ORIGINS = [
   'https://vscode.dev',
   'https://insiders.vscode.dev',
@@ -26,6 +33,21 @@ const JAVA_COMMAND = path.resolve(
   GATEWAY_DIR,
   '../../build/install/kind2-language-server/bin/kind2-language-server'
 );
+const JAVA_ENV = {
+  KIND2_SAFE_MODE: '1',
+  KIND2_PATH: KIND2_PATH,
+  KIND2_Z3_BIN: KIND2_Z3_BIN
+};
+
+function pickEnvValue(...values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
 
 const webSocketServer = new WebSocketServer({
   host: WEBSOCKET_HOST,
@@ -52,9 +74,11 @@ console.log(
 
 console.log(
   'Allowed WebSocket origins:',
-  ALLOWED_ORIGINS
-    .map(formatOriginRule)
-    .join(', ')
+  ALLOWED_ORIGINS.length === 0
+    ? '<all origins>'
+    : ALLOWED_ORIGINS
+        .map(formatOriginRule)
+        .join(', ')
   );
 
 webSocketServer.on('connection', webSocket => {
@@ -132,7 +156,11 @@ webSocketServer.on('connection', webSocket => {
       [String(javaPort)],
       {
         cwd: GATEWAY_DIR,
-        stdio: ['ignore', 'ignore', 'pipe']
+        stdio: ['ignore', 'ignore', 'pipe'],
+        env: {
+          ...process.env,
+          ...JAVA_ENV
+        }
       }
     );
 
@@ -340,7 +368,7 @@ function parseAllowedOrigins(value) {
     .filter(origin => origin.length > 0);
 
   if (origins.length === 0) {
-    return null;
+    return [];
   }
 
   return origins.map(parseOriginRule);
@@ -384,6 +412,10 @@ function formatOriginRule(rule) {
 function isAllowedOrigin(origin) {
   if (typeof origin !== 'string') {
     return false;
+  }
+
+  if (ALLOWED_ORIGINS.length === 0) {
+    return true;
   }
 
   return ALLOWED_ORIGINS.some(rule => {
