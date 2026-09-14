@@ -112,14 +112,13 @@ public class Kind2LanguageServer
     if (openDocuments.containsKey(uri)) {
       return openDocuments.get(uri);
     }
-    return new String(Files.readAllBytes(Paths.get(new URI(uri))), StandardCharsets.UTF_8);
-    // throw new IOException("File not open: " + uri);
+    throw new IOException("File not open: " + uri);
   }
 
   /**
-   * Canonicalizes a client-supplied uri so the same file always maps to the
-   * same string, regardless of whether the client percent-encoded characters
-   * such as the Windows drive-letter colon (e.g. file:///c%3A/... vs file:///c:/...).
+   * Normalizes a client-supplied uri so the same file always maps to the
+   * same string, regardless of whether the client has percent-encoded characters
+   * such as the Windows drive letter colon (file:///c%3A/... vs file:///c:/...).
    */
   private String normalizeUri(String uri) {
     if (uri == null) {
@@ -275,20 +274,7 @@ public class Kind2LanguageServer
       return Paths.get(path);
     }
   private String replacePathWithUri(String json, String mainUri, String path)
-      throws URISyntaxException {
-
-    // // A null path means the result refers to the main document itself: reuse the
-    // // client-provided URI as-is rather than rebuilding it through Path.toUri(),
-    // // which can change casing/encoding (e.g. drive letter) and break map lookups.
-    // String uri = path == null ? mainUri
-    //     : Paths.get(new URI(mainUri)).getParent().resolve(pathFromKind2(path))
-    //         .normalize().toUri().toString();
-    // if (json.contains("\"file\":")) {
-    //   int l = json.indexOf("\"file\":");
-    //   int r = json.indexOf('\"', l + 9) + 1;
-    //   if (json.charAt(r) == ',') {
-    //     r += 1;
-
+      throws URISyntaxException {   
     JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
     URI base = new URI(mainUri);
     URI resolved;
