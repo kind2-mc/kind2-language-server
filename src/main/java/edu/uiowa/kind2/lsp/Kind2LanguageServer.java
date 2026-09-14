@@ -142,7 +142,7 @@ public class Kind2LanguageServer
       return;
     }
 
-    Path documentPath = Path.of(documentUri);
+    Path documentPath = Paths.get(documentUri);
     Path parent = documentPath.getParent();
     if (parent != null) {
       api.includeDir(parent.toString());
@@ -279,7 +279,7 @@ public class Kind2LanguageServer
     URI base = new URI(mainUri);
     URI resolved;
 
-    if (path == null || path.isBlank()) {
+    if (path == null || path.isEmpty()) {
       resolved = base;
     } else {
       URI candidate;
@@ -296,8 +296,8 @@ public class Kind2LanguageServer
         resolved = candidate;
       } else if ("file".equalsIgnoreCase(base.getScheme())) {
         try {
-          Path p = Path.of(path);
-          resolved = (p.isAbsolute() ? p : Path.of(base).resolveSibling(path)).toUri();
+          Path p = Paths.get(path);
+          resolved = (p.isAbsolute() ? p : Paths.get(base).resolveSibling(path)).toUri();
         } catch (IllegalArgumentException e) {
           // Covers InvalidPathException for characters the platform disallows.
           throw new URISyntaxException(path, "This path is not a valid file path");
@@ -946,8 +946,8 @@ private MCSCategory stringToMCSCategory(String cat){
       configuredPath = configs.get("kind2_path").getAsString();
     }
 
-    Path projectRootKind2 = Path.of(System.getProperty("user.dir"), "kind2");
-    if (configuredPath != null && !configuredPath.isBlank()) {
+    Path projectRootKind2 = Paths.get(System.getProperty("user.dir"), "kind2");
+    if (configuredPath != null && !configuredPath.isEmpty()) {
       // Respect explicit user configuration even if the target is temporarily missing.
       Kind2Api.KIND2 = configuredPath;
     } else {
@@ -960,13 +960,13 @@ private MCSCategory stringToMCSCategory(String cat){
       }
     }
 
-    if (Kind2Api.KIND2 == null || Kind2Api.KIND2.isBlank()) {
+    if (Kind2Api.KIND2 == null || Kind2Api.KIND2.isEmpty()) {
       client.showMessage(new MessageParams(MessageType.Error,
           "Kind 2 executable path is blank. Set kind2.kind2_path in settings."));
       return null;
     }
 
-    Path p = Path.of(Kind2Api.KIND2);
+    Path p = Paths.get(Kind2Api.KIND2);
 
     if (!Files.exists(p) || !Files.isExecutable(p)) {
         client.showMessage(new MessageParams(MessageType.Error, "Kind 2 executable not found at " + p));    
