@@ -14,8 +14,11 @@ dependencies {
   testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.7.2'
 }
 
-tasks.withType(JavaCompile).configureEach {
-  options.release = 8
+// --release requires javac 9+; a Java 8 JDK already targets Java 8
+if (JavaVersion.current().isJava9Compatible()) {
+  tasks.withType(JavaCompile).configureEach {
+    options.release = 8
+  }
 }
 
 test {
