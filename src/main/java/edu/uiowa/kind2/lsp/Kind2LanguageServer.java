@@ -144,14 +144,23 @@ public class Kind2LanguageServer
 
     Path documentPath = Paths.get(documentUri);
     Path parent = documentPath.getParent();
-    // Kind2 embeds this path verbatim (unescaped) in its JSON output, so
-    // backslashes from Windows-native paths would corrupt the JSON stream.
     if (parent != null) {
-      api.includeDir(parent.toString().replace('\\', '/'));
+      api.includeDir(pathToKind2(parent));
     }
-    api.setFakeFilepath(documentPath.toString().replace('\\', '/'));
+    api.setFakeFilepath(pathToKind2(documentPath));
+  }
 
-    
+  /**
+   * Kind2 embeds this path verbatim (unescaped) in its JSON output, so
+   * backslashes from Windows-native paths would corrupt the JSON stream.
+   * On other platforms a backslash is a legal file name character, so the
+   * path is left untouched.
+   */
+  String pathToKind2(Path path) {
+    if (System.getProperty("os.name").startsWith("Windows")) {
+      return path.toString().replace('\\', '/');
+    }
+    return path.toString();
   }
 
   void checkLog(Result result) throws ResponseErrorException {
