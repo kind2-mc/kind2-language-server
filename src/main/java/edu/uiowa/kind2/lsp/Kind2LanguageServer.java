@@ -144,10 +144,14 @@ public class Kind2LanguageServer
 
     Path documentPath = Paths.get(documentUri);
     Path parent = documentPath.getParent();
+    // Kind2 embeds this path verbatim (unescaped) in its JSON output, so
+    // backslashes from Windows-native paths would corrupt the JSON stream.
     if (parent != null) {
-      api.includeDir(parent.toString());
+      api.includeDir(parent.toString().replace('\\', '/'));
     }
-    api.setFakeFilepath(documentPath.toString());
+    api.setFakeFilepath(documentPath.toString().replace('\\', '/'));
+
+    
   }
 
   void checkLog(Result result) throws ResponseErrorException {
@@ -470,9 +474,6 @@ public class Kind2LanguageServer
       String uri = normalizeUri(rawUri);
       client.logMessage(new MessageParams(MessageType.Info,
           "Checking component " + name + " in " + uri + "..."));
-      client.logMessage(new MessageParams(MessageType.Info,
-          "Analysis results are" + analysisResults));
-
       analysisResults.get(uri).remove(name);
       Result result = new Result();
       IProgressMonitor monitor = new IProgressMonitor() {
