@@ -1122,14 +1122,20 @@ private MCSCategory stringToMCSCategory(String cat){
     return CompletableFuture.supplyAsync(() -> {
       try {
         String uri = normalizeUri(rawUri);
+        URI parsedUri = new URI(uri);
+        if (!"file".equalsIgnoreCase(parsedUri.getScheme())) {
+          throw new ResponseErrorException(new ResponseError(
+              ResponseErrorCode.InvalidParams,
+              "Cannot get a Kind 2 command for a non-file document: " + uri, null));
+        }
         Kind2Api api = getCheckKind2Api(main, "nodeDecl");
         configureIncludeContext(api, uri);
         List<String> cmd = api.getOptions();
         cmd.set(0, Kind2Api.KIND2);
-        cmd.add(Paths.get(new URI(uri)).toString());
+        cmd.add(Paths.get(parsedUri).toString());
         return cmd;
       } catch (InterruptedException | ExecutionException
-          | URISyntaxException e) {
+          | URISyntaxException | IllegalArgumentException e) {
         throw new ResponseErrorException(new ResponseError(
             ResponseErrorCode.InternalError, e.getMessage(), e));
       }
