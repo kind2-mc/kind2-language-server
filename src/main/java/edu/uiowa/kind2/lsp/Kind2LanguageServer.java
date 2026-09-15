@@ -296,7 +296,7 @@ public class Kind2LanguageServer
         resolved = candidate;
       } else if ("file".equalsIgnoreCase(base.getScheme())) {
         try {
-          Path p = Paths.get(path);
+          Path p = pathFromKind2(path);
           resolved = (p.isAbsolute() ? p : Paths.get(base).resolveSibling(path)).toUri();
         } catch (IllegalArgumentException e) {
           // Covers InvalidPathException for characters the platform disallows.
