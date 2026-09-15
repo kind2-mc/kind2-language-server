@@ -283,7 +283,7 @@ public class Kind2LanguageServer
     URI base = new URI(mainUri);
     URI resolved;
 
-    if (path == null || path.isEmpty()) {
+    if (path == null || path.trim().isEmpty()) {
       resolved = base;
     } else {
       URI candidate;
@@ -948,7 +948,7 @@ private MCSCategory stringToMCSCategory(String cat){
     }
 
     Path projectRootKind2 = Paths.get(System.getProperty("user.dir"), "kind2");
-    if (configuredPath != null && !configuredPath.isEmpty()) {
+    if (configuredPath != null && !configuredPath.trim().isEmpty()) {
       // Respect explicit user configuration even if the target is temporarily missing.
       Kind2Api.KIND2 = configuredPath;
     } else {
@@ -961,7 +961,7 @@ private MCSCategory stringToMCSCategory(String cat){
       }
     }
 
-    if (Kind2Api.KIND2 == null || Kind2Api.KIND2.isEmpty()) {
+    if (Kind2Api.KIND2 == null || Kind2Api.KIND2.trim().isEmpty()) {
       client.showMessage(new MessageParams(MessageType.Error,
           "Kind 2 executable path is blank. Set kind2.kind2_path in settings."));
       return null;
