@@ -31,7 +31,10 @@ const ALLOWED_ORIGINS =
 const GATEWAY_DIR = __dirname;
 const JAVA_COMMAND = path.resolve(
   GATEWAY_DIR,
-  '../../build/install/kind2-language-server/bin/kind2-language-server'
+  '../../build/install/kind2-language-server/bin/' +
+    (process.platform === 'win32'
+      ? 'kind2-language-server.bat'
+      : 'kind2-language-server')
 );
 const JAVA_ENV = {
   KIND2_SAFE_MODE: '1',

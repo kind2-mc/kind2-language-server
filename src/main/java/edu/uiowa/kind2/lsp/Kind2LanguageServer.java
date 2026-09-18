@@ -132,7 +132,7 @@ public class Kind2LanguageServer
 
   private String getRequiredEnv(String name) {
     String value = System.getenv(name);
-    if (value == null || value.isBlank()) {
+    if (value == null || value.trim().isEmpty()) {
       return null;
     }
     return value;
