@@ -3,7 +3,9 @@ package edu.uiowa.kind2.lsp;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -189,6 +191,26 @@ public class Kind2LanguageServer
     throw new IOException("File not open: " + uri);
   }
 
+  /**
+   * Normalizes a client-supplied uri so the same file always maps to the
+   * same string, regardless of whether the client has percent-encoded characters
+   * such as the Windows drive letter colon (file:///c%3A/... vs file:///c:/...).
+   */
+  private String normalizeUri(String uri) {
+    if (uri == null) {
+      return null;
+    }
+    try {
+      URI parsed = new URI(uri);
+      if ("file".equalsIgnoreCase(parsed.getScheme())) {
+        return Paths.get(parsed).toUri().toString();
+      }
+      return parsed.normalize().toString();
+    } catch (URISyntaxException | IllegalArgumentException e) {
+      return uri;
+    }
+  }
+
   private void configureIncludeContext(Kind2Api api, String uri)
       throws URISyntaxException {
     URI documentUri = new URI(uri);
@@ -196,12 +218,25 @@ public class Kind2LanguageServer
       return;
     }
 
-    Path documentPath = Path.of(documentUri);
+    Path documentPath = Paths.get(documentUri);
     Path parent = documentPath.getParent();
     if (parent != null) {
-      api.includeDir(parent.toString());
+      api.includeDir(pathToKind2(parent));
     }
-    api.setFakeFilepath(documentPath.toString());
+    api.setFakeFilepath(pathToKind2(documentPath));
+  }
+
+  /**
+   * Kind2 embeds this path verbatim (unescaped) in its JSON output, so
+   * backslashes from Windows-native paths would corrupt the JSON stream.
+   * On other platforms a backslash is a legal file name character, so the
+   * path is left untouched.
+   */
+  String pathToKind2(Path path) {
+    if (System.getProperty("os.name").startsWith("Windows")) {
+      return path.toString().replace('\\', '/');
+    }
+    return path.toString();
   }
 
   void checkLog(Result result) throws ResponseErrorException {
@@ -314,19 +349,26 @@ public class Kind2LanguageServer
         .logMessage(new MessageParams(MessageType.Info, "Server initialized."));
   }
 
+
   @Override
   public void setTrace(SetTraceParams params) {
     // Trace negotiation is optional for this server. Ignore it to avoid
     // throwing UnsupportedOperationException from the default interface method.
   }
-
+  Path pathFromKind2(String path) {
+      if (System.getProperty("os.name").startsWith("Windows")
+          && path.matches("^/[A-Za-z]:/.*")) {
+        return Paths.get(path.substring(1));
+      }
+      return Paths.get(path);
+    }
   private String replacePathWithUri(String json, String mainUri, String path)
-      throws URISyntaxException {
+      throws URISyntaxException {   
     JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
     URI base = new URI(mainUri);
     URI resolved;
 
-    if (path == null || path.isBlank()) {
+    if (path == null || path.trim().isEmpty()) {
       resolved = base;
     } else {
       URI candidate;
@@ -343,8 +385,8 @@ public class Kind2LanguageServer
         resolved = candidate;
       } else if ("file".equalsIgnoreCase(base.getScheme())) {
         try {
-          Path p = Path.of(path);
-          resolved = (p.isAbsolute() ? p : Path.of(base).resolveSibling(path)).toUri();
+          Path p = pathFromKind2(path);
+          resolved = (p.isAbsolute() ? p : Paths.get(base).resolveSibling(path)).toUri();
         } catch (IllegalArgumentException e) {
           // Covers InvalidPathException for characters the platform disallows.
           throw new URISyntaxException(path, "This path is not a valid file path");
@@ -377,7 +419,7 @@ public class Kind2LanguageServer
   public CompletableFuture<List<String>> getComponents(JsonElement params) {
     client.logMessage(new MessageParams(MessageType.Info, "Getting components..."));
     return CompletableFuture.supplyAsync(() -> {
-      String uri = extractSingleStringParam(params, "kind2/getComponents");
+      String uri = normalizeUri(extractSingleStringParam(params, "kind2/getComponents"));
 
       if (uri == null) {
         throw new ResponseErrorException(new ResponseError(
@@ -429,8 +471,9 @@ public class Kind2LanguageServer
   }
 
   @JsonRequest(value = "kind2/minimalCutSet", useSegment = false)
-  public CompletableFuture<List<String>> minimalCutSet(String uri, String name, String compKind) {
+  public CompletableFuture<List<String>> minimalCutSet(String rawUri, String name, String compKind) {
     return CompletableFutures.computeAsync(cancelToken -> {
+      String uri = normalizeUri(rawUri);
       client.logMessage(new MessageParams(MessageType.Info,
           "Checking minimal cut sets of component " + name + " in " + uri + "..."));
       analysisResults.get(uri).remove(name);
@@ -511,8 +554,9 @@ public class Kind2LanguageServer
   }
 
   @JsonRequest(value = "kind2/check", useSegment = false)
-  public CompletableFuture<List<String>> check(String uri, String name, String compKind) {
+  public CompletableFuture<List<String>> check(String rawUri, String name, String compKind) {
     return CompletableFutures.computeAsync(cancelToken -> {
+      String uri = normalizeUri(rawUri);
       client.logMessage(new MessageParams(MessageType.Info,
           "Checking component " + name + " in " + uri + "..."));
       analysisResults.get(uri).remove(name);
@@ -621,8 +665,9 @@ public class Kind2LanguageServer
       return nodeResults;
   }
   @JsonRequest(value = "kind2/realizability", useSegment = false)
-  public CompletableFuture<List<String>> realizability(String uri, String name, String compKind) {
+  public CompletableFuture<List<String>> realizability(String rawUri, String name, String compKind) {
     return CompletableFutures.computeAsync(cancelToken -> {
+      String uri = normalizeUri(rawUri);
       client.logMessage(new MessageParams(MessageType.Info,
           "Checking realizability of component " + name + " in " + uri + "..."));
       analysisResults.get(uri).remove(name);
@@ -739,9 +784,10 @@ public class Kind2LanguageServer
     return "\"conflictingSet\" : []";
   }
   @JsonRequest(value = "kind2/counterExample", useSegment = false)
-  public CompletableFuture<String> counterExample(String uri, String component,
+  public CompletableFuture<String> counterExample(String rawUri, String component,
       List<String> abs, List<String> concrete, String property) {
     return CompletableFuture.supplyAsync(() -> {
+      String uri = normalizeUri(rawUri);
       if (!analysisResults.containsKey(uri)) {
         return null;
       }
@@ -774,8 +820,9 @@ public class Kind2LanguageServer
   // }
 
   @JsonRequest(value = "kind2/deadlock", useSegment = false)
-  public CompletableFuture<String> deadlock(String uri, String component, String context) {
+  public CompletableFuture<String> deadlock(String rawUri, String component, String context) {
     return CompletableFuture.supplyAsync(() -> {
+      String uri = normalizeUri(rawUri);
       if (!analysisResults.containsKey(uri)) {
         return null;
       }
@@ -994,12 +1041,12 @@ private MCSCategory stringToMCSCategory(String cat){
         configuredPath = configs.get("kind2_path").getAsString();
       }
 
-      Path projectRootKind2 = Path.of(System.getProperty("user.dir"), "kind2");
-      if (configuredPath != null && !configuredPath.isBlank()) {
-        // Respect explicit user configuration even if the target is temporarily missing.
-        Kind2Api.KIND2 = configuredPath;
-      } else {
-        String inferredPath = client.getDefaultKind2Path().get();
+    Path projectRootKind2 = Paths.get(System.getProperty("user.dir"), "kind2");
+    if (configuredPath != null && !configuredPath.trim().isEmpty()) {
+      // Respect explicit user configuration even if the target is temporarily missing.
+      Kind2Api.KIND2 = configuredPath;
+    } else {
+      String inferredPath = client.getDefaultKind2Path().get();
 
         if (inferredPath.startsWith("/static/devextensions/")) {
           Kind2Api.KIND2 = projectRootKind2.toString();
@@ -1009,13 +1056,13 @@ private MCSCategory stringToMCSCategory(String cat){
       }
     }
 
-    if (Kind2Api.KIND2 == null || Kind2Api.KIND2.isBlank()) {
+    if (Kind2Api.KIND2 == null || Kind2Api.KIND2.trim().isEmpty()) {
       client.showMessage(new MessageParams(MessageType.Error,
           "Kind 2 executable path is blank. Set kind2.kind2_path in settings."));
       return null;
     }
 
-    Path p = Path.of(Kind2Api.KIND2);
+    Path p = Paths.get(Kind2Api.KIND2);
 
     if (!Files.exists(p) || !Files.isExecutable(p)) {
         client.showMessage(new MessageParams(MessageType.Error, "Kind 2 executable not found at " + p));    
@@ -1157,10 +1204,11 @@ private MCSCategory stringToMCSCategory(String cat){
   }
 
   @JsonRequest(value = "kind2/interpret", useSegment = false)
-  public CompletableFuture<String> interpret(String uri, String main,
+  public CompletableFuture<String> interpret(String rawUri, String main,
       String json) {
     return CompletableFuture.supplyAsync(() -> {
       try {
+        String uri = normalizeUri(rawUri);
         Kind2Api api = getPresetKind2Api();
         configureIncludeContext(api, uri);
         return api.interpret(getText(uri), main, json);
@@ -1173,17 +1221,24 @@ private MCSCategory stringToMCSCategory(String cat){
   }
 
   @JsonRequest(value = "kind2/getKind2Cmd", useSegment = false)
-  public CompletableFuture<List<String>> getKind2Cmd(String uri, String main) {
+  public CompletableFuture<List<String>> getKind2Cmd(String rawUri, String main) {
     return CompletableFuture.supplyAsync(() -> {
       try {
+        String uri = normalizeUri(rawUri);
+        URI parsedUri = new URI(uri);
+        if (!"file".equalsIgnoreCase(parsedUri.getScheme())) {
+          throw new ResponseErrorException(new ResponseError(
+              ResponseErrorCode.InvalidParams,
+              "Cannot get a Kind 2 command for a non-file document: " + uri, null));
+        }
         Kind2Api api = getCheckKind2Api(main, "nodeDecl");
         configureIncludeContext(api, uri);
         List<String> cmd = api.getOptions();
         cmd.set(0, Kind2Api.KIND2);
-        cmd.add(new URI(uri).getPath());
+        cmd.add(Paths.get(parsedUri).toString());
         return cmd;
       } catch (InterruptedException | ExecutionException
-          | URISyntaxException e) {
+          | URISyntaxException | IllegalArgumentException e) {
         throw new ResponseErrorException(new ResponseError(
             ResponseErrorCode.InternalError, e.getMessage(), e));
       }
@@ -1208,7 +1263,7 @@ private MCSCategory stringToMCSCategory(String cat){
     return new TextDocumentService() {
       @Override
       public void didOpen(DidOpenTextDocumentParams params) {
-        String uri = params.getTextDocument().getUri();
+        String uri = normalizeUri(params.getTextDocument().getUri());
         openDocuments.put(uri, params.getTextDocument().getText());
         analysisResults.put(uri, new HashMap<>());
         CompletableFuture.runAsync(() -> {
@@ -1224,7 +1279,7 @@ private MCSCategory stringToMCSCategory(String cat){
 
       @Override
       public void didChange(DidChangeTextDocumentParams params) {
-        String uri = params.getTextDocument().getUri();
+        String uri = normalizeUri(params.getTextDocument().getUri());
         openDocuments.replace(uri, params.getContentChanges().get(0).getText());
         analysisResults.put(uri, new HashMap<>());
         CompletableFuture.runAsync(() -> {
@@ -1240,8 +1295,8 @@ private MCSCategory stringToMCSCategory(String cat){
 
       @Override
       public void didClose(DidCloseTextDocumentParams params) {
-        String uri = params.getTextDocument().getUri();
-        openDocuments.remove(params.getTextDocument().getUri());
+        String uri = normalizeUri(params.getTextDocument().getUri());
+        openDocuments.remove(uri);
         parseResults.remove(uri);
         analysisResults.remove(uri);
         client.updateComponents(uri);
@@ -1251,7 +1306,7 @@ private MCSCategory stringToMCSCategory(String cat){
 
       @Override
       public void didSave(DidSaveTextDocumentParams params) {
-        openDocuments.replace(params.getTextDocument().getUri(),
+        openDocuments.replace(normalizeUri(params.getTextDocument().getUri()),
             params.getText());
       }
 
@@ -1259,7 +1314,7 @@ private MCSCategory stringToMCSCategory(String cat){
       public CompletableFuture<List<Either<SymbolInformation, DocumentSymbol>>> documentSymbol(
           DocumentSymbolParams params) {
         return CompletableFuture.supplyAsync(() -> {
-          String uri = params.getTextDocument().getUri();
+          String uri = normalizeUri(params.getTextDocument().getUri());
           List<Either<SymbolInformation, DocumentSymbol>> symbols = new ArrayList<>();
           if (parseResults.containsKey(uri)) {
             for (AstInfo info : parseResults.get(uri).getAstInfos()) {
@@ -1297,7 +1352,7 @@ private MCSCategory stringToMCSCategory(String cat){
       }
 
       private String getSymbolName(String text, Position pos) {
-        List<String> lines = text.lines().collect(Collectors.toList());
+        List<String> lines = Arrays.asList(text.split("\r\n|\r|\n", -1));
         String line = lines.get(pos.getLine());
         if (pos.getCharacter() == line.length()) {
           return "";
@@ -1320,7 +1375,7 @@ private MCSCategory stringToMCSCategory(String cat){
       public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> definition(
           DefinitionParams params) {
         return CompletableFuture.supplyAsync(() -> {
-          String uri = params.getTextDocument().getUri();
+          String uri = normalizeUri(params.getTextDocument().getUri());
           String name;
           try {
             name = getSymbolName(getText(uri), params.getPosition());
