@@ -20,6 +20,7 @@ const DEFAULT_ALLOWED_ORIGINS = [
   'https://github.dev',
   'http://127.0.0.1:3000',
   'http://localhost:3000',
+  /^http:\/\/(?:[^./]+\.)*localhost:3000$/i,
   'http://localhost'
 ];
 
