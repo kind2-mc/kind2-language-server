@@ -118,12 +118,8 @@ public class Kind2LanguageServer
     }
 
     switch (value.trim().toLowerCase()) {
-    case "1":
     case "true":
-    case "yes":
-    case "on":
       return true;
-    case "false":
     default:
       return false;
     }

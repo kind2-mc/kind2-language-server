@@ -35,7 +35,7 @@ KIND2_ALLOWED_ORIGINS=http://127.0.0.1:4173,http://localhost:4173 node src/web/k
 
 When the language server is exposed to untrusted clients, enable safe mode so the server does not trust executable paths from the editor extension.
 
-Set `KIND2_SAFE_MODE=1` and point the server to the Kind 2 binary with `KIND2_PATH`.
+Set `KIND2_SAFE_MODE=TRUE` and point the server to the Kind 2 binary with `KIND2_PATH`.
 
 In safe mode, the `kind2.kind2_path` extension setting is ignored.
 
