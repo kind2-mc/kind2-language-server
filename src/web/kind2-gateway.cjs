@@ -160,6 +160,7 @@ webSocketServer.on('connection', webSocket => {
       {
         cwd: GATEWAY_DIR,
         stdio: ['ignore', 'ignore', 'pipe'],
+        shell: process.platform === 'win32',
         env: {
           ...process.env,
           ...JAVA_ENV

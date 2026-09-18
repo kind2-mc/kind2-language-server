@@ -1030,7 +1030,7 @@ private MCSCategory stringToMCSCategory(String cat){
     String configuredPath = null;
     if (safeMode) {
       configuredPath = getRequiredEnv("KIND2_PATH");
-      if (configuredPath == null || configuredPath.isBlank()) {
+      if (configuredPath == null || configuredPath.trim().isEmpty()) {
         client.showMessage(new MessageParams(MessageType.Error,
             "Safe mode is enabled, but KIND2_PATH is not set."));
         return null;
