@@ -1065,6 +1065,8 @@ private MCSCategory stringToMCSCategory(String cat){
         return null;
     }
     Kind2Api api = new Kind2Api();
+    api.setSafeMode(safeMode);
+
     JsonObject smtConfigs = configs.get("smt").getAsJsonObject();
     SolverOption solver = stringToSolver(
         smtConfigs.get("smt_solver").getAsString());
