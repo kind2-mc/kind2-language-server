@@ -38,7 +38,7 @@ const JAVA_COMMAND = path.resolve(
       : 'kind2-language-server')
 );
 const JAVA_ENV = {
-  KIND2_SAFE_MODE: '1',
+  KIND2_SAFE_MODE: 'true',
   KIND2_PATH: KIND2_PATH,
   KIND2_Z3_BIN: KIND2_Z3_BIN
 };
