@@ -107,12 +107,13 @@ public class Kind2LanguageServer
     openDocuments = new HashMap<>();
     parseResults = new HashMap<>();
     analysisResults = new HashMap<>();
-    safeMode = isEnabled(System.getenv(SAFE_MODE_ENV));
+    safeMode = safeModeIsEnabled();
     Result.setOpeningSymbols("");
     Result.setClosingSymbols("");
   }
 
-  private static boolean isEnabled(String value) {
+  private static boolean safeModeIsEnabled() {
+    String value = System.getenv(SAFE_MODE_ENV);
     if (value == null) {
       return false;
     }
@@ -120,8 +121,10 @@ public class Kind2LanguageServer
     switch (value.trim().toLowerCase()) {
     case "true":
       return true;
-    default:
+    case "false":
       return false;
+    default:
+      throw new IllegalArgumentException("Safe mode variable initialized with " + value + " but expected 'true' or 'false'.");
     }
   }
 
