@@ -1040,13 +1040,12 @@ private MCSCategory stringToMCSCategory(String cat){
         configuredPath = configs.get("kind2_path").getAsString();
       }
 
-    Path projectRootKind2 = Paths.get(System.getProperty("user.dir"), "kind2");
-    if (configuredPath != null && !configuredPath.trim().isEmpty()) {
-      // Respect explicit user configuration even if the target is temporarily missing.
-      Kind2Api.KIND2 = configuredPath;
-    } else {
-      String inferredPath = client.getDefaultKind2Path().get();
-
+      Path projectRootKind2 = Paths.get(System.getProperty("user.dir"), "kind2");
+      if (configuredPath != null && !configuredPath.trim().isEmpty()) {
+        // Respect explicit user configuration even if the target is temporarily missing.
+        Kind2Api.KIND2 = configuredPath;
+      } else {
+        String inferredPath = client.getDefaultKind2Path().get();
         if (inferredPath.startsWith("/static/devextensions/")) {
           Kind2Api.KIND2 = projectRootKind2.toString();
         } else {
@@ -1076,12 +1075,7 @@ private MCSCategory stringToMCSCategory(String cat){
     if (solver != null) {
       api.setSmtSolver(solver);
     }
-    if (safeMode) {
-      boolean succeeded = applyServerConfiguredSolverPaths(api);
-      if(!succeeded) {
-        return null;
-      }
-    }
+
     QESolverOption qe_solver = stringToQESolver(
         smtConfigs.get("smt_qe_solver").getAsString());
     if (qe_solver != null) {
@@ -1092,7 +1086,12 @@ private MCSCategory stringToMCSCategory(String cat){
     if (itp_solver != null) {
       api.setITPSmtSolver(itp_solver);
     }
-    if (!safeMode) {
+    if (safeMode) {
+      boolean succeeded = applyServerConfiguredSolverPaths(api);
+      if(!succeeded) {
+        return null;
+      }
+    } else {
       setSmtSolverPaths(api, smtConfigs);
     }
     if (!configs.get("log_level").getAsString().equals("note")) {
