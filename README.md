@@ -21,6 +21,12 @@ set KIND2_PATH=C:\path\to\kind2.exe
 npm run start
 ```
 
+Terminal: 
+
+```terminal
+KIND2_PATH="/path/to/kind2"
+```
+
 For safety, the gateway only binds to 127.0.0.1 and rejects WebSocket connections whose Origin header is not allowlisted.
 
 Default allowed origins:
