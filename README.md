@@ -45,7 +45,7 @@ Set `KIND2_SAFE_MODE=TRUE` and point the server to the Kind 2 binary with `KIND2
 
 In safe mode, the `kind2.kind2_path` extension setting is ignored.
 
-In safe mode, the server ignores client-provided Kind 2 and solver binary paths. If you need custom solver locations, configure them on the server with these optional environment variables:
+In safe mode, the server ignores client-provided Kind 2 and solver binary paths. For the language server to function, you must configure at least one solver on the server by setting the solver paths with these optional environment variables:
 
 - `KIND2_Z3_BIN`
 - `KIND2_BITWUZLA_BIN`
