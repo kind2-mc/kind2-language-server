@@ -24,7 +24,8 @@ npm run start
 Terminal: 
 
 ```terminal
-KIND2_PATH="/path/to/kind2"
+export KIND2_PATH="/path/to/kind2"
+npm run start
 ```
 
 For safety, the gateway only binds to 127.0.0.1 and rejects WebSocket connections whose Origin header is not allowlisted.
