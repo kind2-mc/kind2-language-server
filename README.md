@@ -56,3 +56,5 @@ In safe mode, the server ignores client-provided Kind 2 and solver binary paths.
 - `KIND2_SMTINTERPOL_JAR`
 - `KIND2_YICES_BIN`
 - `KIND2_YICES2_BIN`
+
+The gateway will look for only `./src/web/z3` and `./src/web/kind2` automatically. So an alternative to setting the `KIND2_PATH` and `KIND2_*_BIN` is to include `kind2` and `z3` at `./src/web/`. If `KIND2_PATH` or `KIND2_Z3_BIN` are set, then those will be the paths used instead.

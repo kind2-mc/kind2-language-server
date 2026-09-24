@@ -8,11 +8,11 @@ const WEBSOCKET_HOST = '127.0.0.1';
 const WEBSOCKET_PATH = '/lsp';
 const KIND2_PATH = pickEnvValue(
   process.env.KIND2_PATH,
-  'kind2'
+  './kind2'
 );
 const KIND2_Z3_BIN = pickEnvValue(
   process.env.KIND2_Z3_BIN,
-  'z3'
+  './z3'
 );
 const DEFAULT_ALLOWED_ORIGINS = [
   'https://vscode.dev',
