@@ -2,6 +2,7 @@ const net = require('node:net');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { WebSocketServer, WebSocket } = require('ws');
+const fs = require('node:fs');
 
 const WEBSOCKET_PORT = 3001;
 const WEBSOCKET_HOST = '127.0.0.1';
@@ -10,10 +11,12 @@ const KIND2_PATH = pickEnvValue(
   process.env.KIND2_PATH,
   './kind2'
 );
-const KIND2_Z3_BIN = pickEnvValue(
-  process.env.KIND2_Z3_BIN,
-  './z3'
-);
+const KIND2_Z3_BIN =
+  pickEnvValue(process.env.KIND2_Z3_BIN) ??
+  (fs.existsSync(path.resolve(__dirname, './z3'))
+    ? './z3'
+    : undefined);
+
 const DEFAULT_ALLOWED_ORIGINS = [
   'https://vscode.dev',
   'https://insiders.vscode.dev',
@@ -40,7 +43,9 @@ const JAVA_COMMAND = path.resolve(
 const JAVA_ENV = {
   KIND2_SAFE_MODE: 'true',
   KIND2_PATH: KIND2_PATH,
-  KIND2_Z3_BIN: KIND2_Z3_BIN
+  ...(KIND2_Z3_BIN !== undefined
+    ? { KIND2_Z3_BIN }
+    : {})
 };
 
 function pickEnvValue(...values) {
