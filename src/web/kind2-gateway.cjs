@@ -156,7 +156,9 @@ webSocketServer.on('connection', webSocket => {
     );
 
     javaProcess = spawn(
-      JAVA_COMMAND,
+      process.platform === 'win32'
+        ? `"${JAVA_COMMAND}"`
+        : JAVA_COMMAND,
       [String(javaPort)],
       {
         cwd: GATEWAY_DIR,
@@ -373,6 +375,10 @@ function parseAllowedOrigins(value) {
     .filter(origin => origin.length > 0);
 
   if (origins.length === 0) {
+    return null;
+  }
+
+  if (origins.length === 1 && origins[0] === '*') {
     return [];
   }
 
