@@ -2,15 +2,30 @@ const net = require('node:net');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { WebSocketServer, WebSocket } = require('ws');
+const fs = require('node:fs');
 
 const WEBSOCKET_PORT = 3001;
 const WEBSOCKET_HOST = '127.0.0.1';
 const WEBSOCKET_PATH = '/lsp';
+const KIND2_PATH = pickEnvValue(
+  process.env.KIND2_PATH,
+  './kind2'
+);
+const KIND2_Z3_BIN =
+  pickEnvValue(process.env.KIND2_Z3_BIN) ??
+  (fs.existsSync(path.resolve(__dirname, './z3'))
+    ? './z3'
+    : undefined);
 
-const DEFAULT_ALLOWED_ORIGINS = new Set([
+const DEFAULT_ALLOWED_ORIGINS = [
+  'https://vscode.dev',
+  'https://insiders.vscode.dev',
+  'https://github.dev',
   'http://127.0.0.1:3000',
-  'http://localhost:3000'
-]);
+  'http://localhost:3000',
+  /^http:\/\/(?:[^./]+\.)*localhost:3000$/i,
+  'http://localhost'
+];
 
 const ALLOWED_ORIGINS =
   parseAllowedOrigins(
@@ -20,8 +35,28 @@ const ALLOWED_ORIGINS =
 const GATEWAY_DIR = __dirname;
 const JAVA_COMMAND = path.resolve(
   GATEWAY_DIR,
-  '../../build/install/kind2-language-server/bin/kind2-language-server'
+  '../../build/install/kind2-language-server/bin/' +
+    (process.platform === 'win32'
+      ? 'kind2-language-server.bat'
+      : 'kind2-language-server')
 );
+const JAVA_ENV = {
+  KIND2_SAFE_MODE: 'true',
+  KIND2_PATH: KIND2_PATH,
+  ...(KIND2_Z3_BIN !== undefined
+    ? { KIND2_Z3_BIN }
+    : {})
+};
+
+function pickEnvValue(...values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
 
 const webSocketServer = new WebSocketServer({
   host: WEBSOCKET_HOST,
@@ -48,8 +83,12 @@ console.log(
 
 console.log(
   'Allowed WebSocket origins:',
-  Array.from(ALLOWED_ORIGINS).join(', ')
-);
+  ALLOWED_ORIGINS.length === 0
+    ? '<all origins>'
+    : ALLOWED_ORIGINS
+        .map(formatOriginRule)
+        .join(', ')
+  );
 
 webSocketServer.on('connection', webSocket => {
   console.log('Browser connected');
@@ -122,11 +161,18 @@ webSocketServer.on('connection', webSocket => {
     );
 
     javaProcess = spawn(
-      JAVA_COMMAND,
+      process.platform === 'win32'
+        ? `"${JAVA_COMMAND}"`
+        : JAVA_COMMAND,
       [String(javaPort)],
       {
         cwd: GATEWAY_DIR,
-        stdio: ['ignore', 'ignore', 'pipe']
+        stdio: ['ignore', 'ignore', 'pipe'],
+        shell: process.platform === 'win32',
+        env: {
+          ...process.env,
+          ...JAVA_ENV
+        }
       }
     );
 
@@ -337,14 +383,65 @@ function parseAllowedOrigins(value) {
     return null;
   }
 
-  return new Set(origins);
+  if (origins.length === 1 && origins[0] === '*') {
+    return [];
+  }
+
+  return origins.map(parseOriginRule);
+}
+
+function parseOriginRule(origin) {
+  const regexLiteralMatch =
+    /^\/(.+)\/([a-z]*)$/i.exec(origin);
+
+  if (regexLiteralMatch === null) {
+    return origin;
+  }
+
+  try {
+    return new RegExp(
+      regexLiteralMatch[1],
+      regexLiteralMatch[2]
+    );
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : String(error);
+
+    console.warn(
+      `Ignoring invalid origin regex ${origin}: ${errorMessage}`
+    );
+
+    return origin;
+  }
+}
+
+function formatOriginRule(rule) {
+  if (rule instanceof RegExp) {
+    return `/${rule.source}/${rule.flags}`;
+  }
+
+  return rule;
 }
 
 function isAllowedOrigin(origin) {
-  return (
-    typeof origin === 'string' &&
-    ALLOWED_ORIGINS.has(origin)
-  );
+  if (typeof origin !== 'string') {
+    return false;
+  }
+
+  if (ALLOWED_ORIGINS.length === 0) {
+    return true;
+  }
+
+  return ALLOWED_ORIGINS.some(rule => {
+    if (rule instanceof RegExp) {
+      rule.lastIndex = 0;
+      return rule.test(origin);
+    }
+
+    return rule === origin;
+  });
 }
 
 function summarizeMessage(json) {

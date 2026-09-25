@@ -94,18 +94,93 @@ import edu.uiowa.cs.clc.kind2.results.TypeDeclInfo;
 public class Kind2LanguageServer
     implements org.eclipse.lsp4j.services.LanguageServer, LanguageClientAware {
 
+  private static final String SAFE_MODE_ENV = "KIND2_SAFE_MODE";
+
   private Kind2LanguageClient client;
   private Map<String, String> openDocuments;
   private Map<String, Result> parseResults;
   private Map<String, Map<String, NodeResult>> analysisResults;
+  private final boolean safeMode;
 
   public Kind2LanguageServer() {
     client = null;
     openDocuments = new HashMap<>();
     parseResults = new HashMap<>();
     analysisResults = new HashMap<>();
+    safeMode = safeModeIsEnabled();
     Result.setOpeningSymbols("");
     Result.setClosingSymbols("");
+  }
+
+  private static boolean safeModeIsEnabled() {
+    String value = System.getenv(SAFE_MODE_ENV);
+    if (value == null) {
+      return false;
+    }
+
+    switch (value.trim().toLowerCase()) {
+    case "true":
+      return true;
+    case "false":
+      return false;
+    default:
+      throw new IllegalArgumentException("Safe mode variable initialized with " + value + " but expected 'true' or 'false'.");
+    }
+  }
+
+
+  private String getRequiredEnv(String name) {
+    String value = System.getenv(name);
+    if (value == null || value.trim().isEmpty()) {
+      return null;
+    }
+    return value;
+  }
+
+  private boolean applyServerConfiguredSolverPaths(Kind2Api api) {
+    String bitwuzlaBin = getRequiredEnv("KIND2_BITWUZLA_BIN");
+    String cvc5Bin = getRequiredEnv("KIND2_CVC5_BIN");
+    String mathsatBin = getRequiredEnv("KIND2_MATHSAT_BIN");
+    String opensmtBin = getRequiredEnv("KIND2_OPENSMT_BIN");
+    String smtInterpolJar = getRequiredEnv("KIND2_SMTINTERPOL_JAR");
+    String yicesBin = getRequiredEnv("KIND2_YICES_BIN");
+    String yices2Bin = getRequiredEnv("KIND2_YICES2_BIN");
+    String z3Bin = getRequiredEnv("KIND2_Z3_BIN");
+
+    if (bitwuzlaBin == null
+        && cvc5Bin == null && mathsatBin == null
+        && opensmtBin == null && smtInterpolJar == null && yicesBin == null
+        && yices2Bin == null && z3Bin == null) {
+      client.showMessage(new MessageParams(MessageType.Error,
+          "Safe mode is enabled, but no solver paths are available from the environment."));
+      return false;
+    }
+
+    if (bitwuzlaBin != null) {
+      api.setBitwuzlaBin(bitwuzlaBin);
+    }
+    if (cvc5Bin != null) {
+      api.setcvc5Bin(cvc5Bin);
+    }
+    if (mathsatBin != null) {
+      api.setMathSATBin(mathsatBin);
+    }
+    if (opensmtBin != null) {
+      api.setOpenSMTBin(opensmtBin);
+    }
+    if (smtInterpolJar != null) {
+      api.setSmtInterpolJar(smtInterpolJar);
+    }
+    if (yicesBin != null) {
+      api.setYicesBin(yicesBin);
+    }
+    if (yices2Bin != null) {
+      api.setYices2Bin(yices2Bin);
+    }
+    if (z3Bin != null) {
+      api.setZ3Bin(z3Bin);
+    }
+    return true;
   }
 
   public String getText(String uri) throws IOException, URISyntaxException {
@@ -952,21 +1027,30 @@ private MCSCategory stringToMCSCategory(String cat){
         .get().get(0);
 
     String configuredPath = null;
-    if (configs.has("kind2_path") && !configs.get("kind2_path").isJsonNull()) {
-      configuredPath = configs.get("kind2_path").getAsString();
-    }
-
-    Path projectRootKind2 = Paths.get(System.getProperty("user.dir"), "kind2");
-    if (configuredPath != null && !configuredPath.trim().isEmpty()) {
-      // Respect explicit user configuration even if the target is temporarily missing.
+    if (safeMode) {
+      configuredPath = getRequiredEnv("KIND2_PATH");
+      if (configuredPath == null || configuredPath.trim().isEmpty()) {
+        client.showMessage(new MessageParams(MessageType.Error,
+            "Safe mode is enabled, but KIND2_PATH is not set."));
+        return null;
+      }
       Kind2Api.KIND2 = configuredPath;
     } else {
-      String inferredPath = client.getDefaultKind2Path().get();
+      if (configs.has("kind2_path") && !configs.get("kind2_path").isJsonNull()) {
+        configuredPath = configs.get("kind2_path").getAsString();
+      }
 
-      if (inferredPath.startsWith("/static/devextensions/")) {
-        Kind2Api.KIND2 = projectRootKind2.toString();
+      Path projectRootKind2 = Paths.get(System.getProperty("user.dir"), "kind2");
+      if (configuredPath != null && !configuredPath.trim().isEmpty()) {
+        // Respect explicit user configuration even if the target is temporarily missing.
+        Kind2Api.KIND2 = configuredPath;
       } else {
-        Kind2Api.KIND2 = inferredPath;
+        String inferredPath = client.getDefaultKind2Path().get();
+        if (inferredPath.startsWith("/static/devextensions/")) {
+          Kind2Api.KIND2 = projectRootKind2.toString();
+        } else {
+          Kind2Api.KIND2 = inferredPath;
+        }
       }
     }
 
@@ -983,12 +1067,15 @@ private MCSCategory stringToMCSCategory(String cat){
         return null;
     }
     Kind2Api api = new Kind2Api();
+    api.setSafeMode(safeMode);
+
     JsonObject smtConfigs = configs.get("smt").getAsJsonObject();
     SolverOption solver = stringToSolver(
         smtConfigs.get("smt_solver").getAsString());
     if (solver != null) {
       api.setSmtSolver(solver);
     }
+
     QESolverOption qe_solver = stringToQESolver(
         smtConfigs.get("smt_qe_solver").getAsString());
     if (qe_solver != null) {
@@ -999,7 +1086,14 @@ private MCSCategory stringToMCSCategory(String cat){
     if (itp_solver != null) {
       api.setITPSmtSolver(itp_solver);
     }
-    setSmtSolverPaths(api, smtConfigs);
+    if (safeMode) {
+      boolean succeeded = applyServerConfiguredSolverPaths(api);
+      if(!succeeded) {
+        return null;
+      }
+    } else {
+      setSmtSolverPaths(api, smtConfigs);
+    }
     if (!configs.get("log_level").getAsString().equals("note")) {
       api.setLogLevel(stringToLevel(configs.get("log_level").getAsString()));
     }
