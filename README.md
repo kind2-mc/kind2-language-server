@@ -37,7 +37,8 @@ Default allowed origins:
 To override the allowed origins, set KIND2_ALLOWED_ORIGINS to a comma-separated list. Example:
 
 ```terminal
-export KIND2_ALLOWED_ORIGINS=http://127.0.0.1:4173,http://localhost:4173 node src/web/kind2-gateway.cjs
+export KIND2_ALLOWED_ORIGINS=http://127.0.0.1:4173,http://localhost:4173
+npm run start
 ```
 
 Setting the variable to `*` will allow all origins: `export KIND2_ALLOWED_ORIGINS="*"`
