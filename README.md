@@ -30,9 +30,7 @@ npm run start
 
 For safety, the gateway only binds to 127.0.0.1 and rejects WebSocket connections whose Origin header is not allowlisted.
 
-Default allowed origins:
-- http://127.0.0.1:3000
-- http://localhost:3000
+The set of default allowed origins is defined in `kind2-gateway.cjs`
 
 To override the allowed origins, set KIND2_ALLOWED_ORIGINS to a comma-separated list. Example:
 
