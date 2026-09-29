@@ -95,6 +95,9 @@ public class Kind2LanguageServer
     implements org.eclipse.lsp4j.services.LanguageServer, LanguageClientAware {
 
   private static final String SAFE_MODE_ENV = "KIND2_SAFE_MODE";
+  private static final String SAFE_MODE_CPU_USAGE_ENV_VAR = "KIND2_SAFE_MODE_CPU";
+  private static final String SAFE_MODE_MEMORY_USAGE_ENV_VAR = "KIND2_SAFE_MODE_MEMORY";
+  private static final String SAFE_MODE_ENV_SWAP_USAGE_ENV_VAR = "KIND2_SAFE_MODE_SWAP";
 
   private Kind2LanguageClient client;
   private Map<String, String> openDocuments;
@@ -111,7 +114,33 @@ public class Kind2LanguageServer
     Result.setOpeningSymbols("");
     Result.setClosingSymbols("");
   }
+  private static Double getSafeModeCpuUsage(){
+    String value = System.getenv(SAFE_MODE_CPU_USAGE_ENV_VAR);
+    if (value.trim().isEmpty()){
+      return null;
+    }
+    try{
+      return Double.valueOf(Double.parseDouble(value));
+    } catch (NumberFormatException e){
+      throw new IllegalArgumentException(SAFE_MODE_CPU_USAGE_ENV_VAR + " was set to " + value + ", but a floating point-value was expected (e.g. 1.5)");
+    }
+  }
 
+  private static String getMemoryAmount(String env_var){
+    String value = System.getenv(env_var);
+    if (value.trim().isEmpty()){
+      return null;
+    }    
+    return value;
+  }
+
+  private static String getSafeModeMemoryUsage(){
+    return getMemoryAmount(SAFE_MODE_MEMORY_USAGE_ENV_VAR);
+  }
+
+  private static String getSafeModeSwapUsage(){
+    return getMemoryAmount(SAFE_MODE_ENV_SWAP_USAGE_ENV_VAR);
+  }
   private static boolean safeModeIsEnabled() {
     String value = System.getenv(SAFE_MODE_ENV);
     if (value == null) {
@@ -1087,6 +1116,13 @@ private MCSCategory stringToMCSCategory(String cat){
       api.setITPSmtSolver(itp_solver);
     }
     if (safeMode) {
+      Double cpuUsage = getSafeModeCpuUsage();
+      String memoryUsage = getSafeModeMemoryUsage();
+      String swapUsage = getSafeModeSwapUsage();
+      client.logMessage(new MessageParams(MessageType.Info, "Setting CPU Usage to " + cpuUsage + ", memory to " + memoryUsage + ", swap to " + swapUsage));
+      if(cpuUsage != null) api.setSafeModeCpuUsage(cpuUsage);
+      if(memoryUsage != null) api.setSafeModeMemoryUsage(memoryUsage);
+      if(swapUsage != null) api.setSafeModeSwapUsage(swapUsage);
       boolean succeeded = applyServerConfiguredSolverPaths(api);
       if(!succeeded) {
         return null;

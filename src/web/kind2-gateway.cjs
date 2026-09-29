@@ -16,6 +16,18 @@ const KIND2_Z3_BIN =
   (fs.existsSync(path.resolve(__dirname, './z3'))
     ? './z3'
     : undefined);
+const KIND2_SAFE_MODE_CPU = pickEnvValue(
+  process.env.KIND2_SAFE_MODE_CPU,
+  '2.0'
+);
+const KIND2_SAFE_MODE_MEMORY = pickEnvValue(
+  process.env.KIND2_SAFE_MODE_MEMORY,
+  '2g'
+);
+const KIND2_SAFE_MODE_SWAP = pickEnvValue(
+  process.env.KIND2_SAFE_MODE_SWAP,
+  '2g'
+); 
 
 const DEFAULT_ALLOWED_ORIGINS = [
   'https://vscode.dev',
@@ -43,6 +55,9 @@ const JAVA_COMMAND = path.resolve(
 const JAVA_ENV = {
   KIND2_SAFE_MODE: 'true',
   KIND2_PATH: KIND2_PATH,
+  KIND2_SAFE_MODE_CPU: KIND2_SAFE_MODE_CPU,
+  KIND2_SAFE_MODE_MEMORY: KIND2_SAFE_MODE_MEMORY,
+  KIND2_SAFE_MODE_SWAP: KIND2_SAFE_MODE_SWAP,
   ...(KIND2_Z3_BIN !== undefined
     ? { KIND2_Z3_BIN }
     : {})
