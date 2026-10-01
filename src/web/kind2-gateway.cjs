@@ -7,15 +7,19 @@ const fs = require('node:fs');
 const WEBSOCKET_PORT = 3001;
 const WEBSOCKET_HOST = '127.0.0.1';
 const WEBSOCKET_PATH = '/lsp';
-const KIND2_PATH = pickEnvValue(
-  process.env.KIND2_PATH,
-  './kind2'
+const GATEWAY_DIR = __dirname;
+const KIND2_PATH = toAbsolutePath(
+  pickEnvValue(
+    process.env.KIND2_PATH,
+    './kind2'
+  )
 );
-const KIND2_Z3_BIN =
+const KIND2_Z3_BIN = toAbsolutePath(
   pickEnvValue(process.env.KIND2_Z3_BIN) ??
-  (fs.existsSync(path.resolve(__dirname, './z3'))
-    ? './z3'
-    : undefined);
+    (fs.existsSync(path.resolve(__dirname, './z3'))
+      ? './z3'
+      : undefined)
+);
 const KIND2_SAFE_MODE_CPU = pickEnvValue(
   process.env.KIND2_SAFE_MODE_CPU,
   '2.0'
@@ -44,7 +48,6 @@ const ALLOWED_ORIGINS =
     process.env.KIND2_ALLOWED_ORIGINS
   ) ?? DEFAULT_ALLOWED_ORIGINS;
 
-const GATEWAY_DIR = __dirname;
 const JAVA_COMMAND = path.resolve(
   GATEWAY_DIR,
   '../../build/install/kind2-language-server/bin/' +
@@ -71,6 +74,16 @@ function pickEnvValue(...values) {
   }
 
   return undefined;
+}
+
+function toAbsolutePath(pathValue) {
+  if (typeof pathValue !== 'string') {
+    return pathValue;
+  }
+
+  return path.isAbsolute(pathValue)
+    ? pathValue
+    : path.resolve(GATEWAY_DIR, pathValue);
 }
 
 const webSocketServer = new WebSocketServer({
