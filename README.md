@@ -80,7 +80,8 @@ KIND2_SAFE_MODE_MEMORY=2g
 KIND2_SAFE_MODE_SWAP=2g
 ```
 
-`KIND2_SAFE_MODE_CPU` specifies the maximum CPU capacity available to each Kind 2 execution, measured in CPU cores. Fractional values are allowed. For example, `0.5` limits an execution to approximately half of one CPU core, while `1.5` allows up to the equivalent of one and a half CPU cores.
+`KIND2_SAFE_MODE_CPU` specifies the maximum CPU capacity available to each Kind 2 execution, measured in CPU cores. Fractional values are allowed. For example, `0.5` limits an execution to approximately half of one CPU core, while `1.5` allows up to the equivalent of one and a half CPU cores. Setting the limit to `0` will mean that executions will
+have no CPU limit.
 
 `KIND2_SAFE_MODE_MEMORY` specifies the maximum amount of physical memory available to each Kind 2 execution.
 
