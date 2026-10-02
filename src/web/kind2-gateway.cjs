@@ -7,15 +7,52 @@ const fs = require('node:fs');
 const WEBSOCKET_PORT = 3001;
 const WEBSOCKET_HOST = '127.0.0.1';
 const WEBSOCKET_PATH = '/lsp';
-const KIND2_PATH = pickEnvValue(
-  process.env.KIND2_PATH,
-  './kind2'
+const GATEWAY_DIR = __dirname;
+const KIND2_PATH = toAbsolutePath(
+  pickEnvValue(
+    process.env.KIND2_PATH,
+    './kind2'
+  )
 );
-const KIND2_Z3_BIN =
+const KIND2_Z3_BIN = toAbsolutePath(
   pickEnvValue(process.env.KIND2_Z3_BIN) ??
-  (fs.existsSync(path.resolve(__dirname, './z3'))
-    ? './z3'
-    : undefined);
+    (fs.existsSync(path.resolve(__dirname, './z3'))
+      ? './z3'
+      : undefined)
+);
+const KIND2_BITWUZLA_BIN = toAbsolutePath(
+  pickEnvValue(process.env.KIND2_BITWUZLA_BIN)
+);
+const KIND2_CVC5_BIN = toAbsolutePath(
+  pickEnvValue(process.env.KIND2_CVC5_BIN)
+);
+const KIND2_MATHSAT_BIN = toAbsolutePath(
+  pickEnvValue(process.env.KIND2_MATHSAT_BIN)
+);
+const KIND2_OPENSMT_BIN = toAbsolutePath(
+  pickEnvValue(process.env.KIND2_OPENSMT_BIN)
+);
+const KIND2_SMTINTERPOL_JAR = toAbsolutePath(
+  pickEnvValue(process.env.KIND2_SMTINTERPOL_JAR)
+);
+const KIND2_YICES_BIN = toAbsolutePath(
+  pickEnvValue(process.env.KIND2_YICES_BIN)
+);
+const KIND2_YICES2_BIN = toAbsolutePath(
+  pickEnvValue(process.env.KIND2_YICES2_BIN)
+);
+const KIND2_SAFE_MODE_CPU = pickEnvValue(
+  process.env.KIND2_SAFE_MODE_CPU,
+  '2.0'
+);
+const KIND2_SAFE_MODE_MEMORY = pickEnvValue(
+  process.env.KIND2_SAFE_MODE_MEMORY,
+  '2g'
+);
+const KIND2_SAFE_MODE_SWAP = pickEnvValue(
+  process.env.KIND2_SAFE_MODE_SWAP,
+  '2g'
+); 
 
 const DEFAULT_ALLOWED_ORIGINS = [
   'https://vscode.dev',
@@ -32,7 +69,6 @@ const ALLOWED_ORIGINS =
     process.env.KIND2_ALLOWED_ORIGINS
   ) ?? DEFAULT_ALLOWED_ORIGINS;
 
-const GATEWAY_DIR = __dirname;
 const JAVA_COMMAND = path.resolve(
   GATEWAY_DIR,
   '../../build/install/kind2-language-server/bin/' +
@@ -43,6 +79,30 @@ const JAVA_COMMAND = path.resolve(
 const JAVA_ENV = {
   KIND2_SAFE_MODE: 'true',
   KIND2_PATH: KIND2_PATH,
+  KIND2_SAFE_MODE_CPU: KIND2_SAFE_MODE_CPU,
+  KIND2_SAFE_MODE_MEMORY: KIND2_SAFE_MODE_MEMORY,
+  KIND2_SAFE_MODE_SWAP: KIND2_SAFE_MODE_SWAP,
+  ...(KIND2_BITWUZLA_BIN !== undefined
+    ? { KIND2_BITWUZLA_BIN }
+    : {}),
+  ...(KIND2_CVC5_BIN !== undefined
+    ? { KIND2_CVC5_BIN }
+    : {}),
+  ...(KIND2_MATHSAT_BIN !== undefined
+    ? { KIND2_MATHSAT_BIN }
+    : {}),
+  ...(KIND2_OPENSMT_BIN !== undefined
+    ? { KIND2_OPENSMT_BIN }
+    : {}),
+  ...(KIND2_SMTINTERPOL_JAR !== undefined
+    ? { KIND2_SMTINTERPOL_JAR }
+    : {}),
+  ...(KIND2_YICES_BIN !== undefined
+    ? { KIND2_YICES_BIN }
+    : {}),
+  ...(KIND2_YICES2_BIN !== undefined
+    ? { KIND2_YICES2_BIN }
+    : {}),
   ...(KIND2_Z3_BIN !== undefined
     ? { KIND2_Z3_BIN }
     : {})
@@ -56,6 +116,16 @@ function pickEnvValue(...values) {
   }
 
   return undefined;
+}
+
+function toAbsolutePath(pathValue) {
+  if (typeof pathValue !== 'string') {
+    return pathValue;
+  }
+
+  return path.isAbsolute(pathValue)
+    ? pathValue
+    : path.resolve(GATEWAY_DIR, pathValue);
 }
 
 const webSocketServer = new WebSocketServer({

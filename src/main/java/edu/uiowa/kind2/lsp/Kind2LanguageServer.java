@@ -95,6 +95,9 @@ public class Kind2LanguageServer
     implements org.eclipse.lsp4j.services.LanguageServer, LanguageClientAware {
 
   private static final String SAFE_MODE_ENV = "KIND2_SAFE_MODE";
+  private static final String SAFE_MODE_CPU_USAGE_ENV_VAR = "KIND2_SAFE_MODE_CPU";
+  private static final String SAFE_MODE_MEMORY_USAGE_ENV_VAR = "KIND2_SAFE_MODE_MEMORY";
+  private static final String SAFE_MODE_ENV_SWAP_USAGE_ENV_VAR = "KIND2_SAFE_MODE_SWAP";
 
   private Kind2LanguageClient client;
   private Map<String, String> openDocuments;
@@ -111,7 +114,33 @@ public class Kind2LanguageServer
     Result.setOpeningSymbols("");
     Result.setClosingSymbols("");
   }
+  private static Double getSafeModeCpuUsage(){
+    String value = System.getenv(SAFE_MODE_CPU_USAGE_ENV_VAR);
+    if (value == null || value.trim().isEmpty()){
+      return null;
+    }
+    try{
+      return Double.valueOf(Double.parseDouble(value));
+    } catch (NumberFormatException e){
+      throw new IllegalArgumentException(SAFE_MODE_CPU_USAGE_ENV_VAR + " was set to " + value + ", but a floating point-value was expected (e.g. 1.5)");
+    }
+  }
 
+  private static String getMemoryAmount(String env_var){
+    String value = System.getenv(env_var);
+    if (value == null || value.trim().isEmpty()){
+      return null;
+    }    
+    return value;
+  }
+
+  private static String getSafeModeMemoryUsage(){
+    return getMemoryAmount(SAFE_MODE_MEMORY_USAGE_ENV_VAR);
+  }
+
+  private static String getSafeModeSwapUsage(){
+    return getMemoryAmount(SAFE_MODE_ENV_SWAP_USAGE_ENV_VAR);
+  }
   private static boolean safeModeIsEnabled() {
     String value = System.getenv(SAFE_MODE_ENV);
     if (value == null) {
@@ -306,7 +335,8 @@ public class Kind2LanguageServer
       api.setLsp(true);
       parseResults.put(uri, api.execute(getText(uri)));
     } catch (Kind2Exception | URISyntaxException | IOException
-        | InterruptedException | ExecutionException e) {
+      | InterruptedException | ExecutionException
+      | IllegalArgumentException e) {
       throw new ResponseErrorException(
           new ResponseError(ResponseErrorCode.ParseError, e.getMessage(), e));
     }
@@ -505,7 +535,8 @@ public class Kind2LanguageServer
                             monitor,
                             listener);
       } catch (Kind2Exception | IOException | URISyntaxException
-          | InterruptedException | ExecutionException e) {
+          | InterruptedException | ExecutionException
+          | IllegalArgumentException e) {
         throw new ResponseErrorException(new ResponseError(
             ResponseErrorCode.InternalError, e.getMessage(), e));
       }
@@ -587,7 +618,8 @@ public class Kind2LanguageServer
                             listener
                           );
       } catch (Kind2Exception | IOException | URISyntaxException
-          | InterruptedException | ExecutionException e) {
+          | InterruptedException | ExecutionException
+          | IllegalArgumentException e) {
         throw new ResponseErrorException(new ResponseError(
             ResponseErrorCode.InternalError, e.getMessage(), e));
       }
@@ -698,7 +730,8 @@ public class Kind2LanguageServer
                             monitor,
                             listener);
       } catch (Kind2Exception | IOException | URISyntaxException
-          | InterruptedException | ExecutionException e) {
+          | InterruptedException | ExecutionException
+          | IllegalArgumentException e) {
         throw new ResponseErrorException(new ResponseError(
             ResponseErrorCode.InternalError, e.getMessage(), e));
       }
@@ -1087,6 +1120,13 @@ private MCSCategory stringToMCSCategory(String cat){
       api.setITPSmtSolver(itp_solver);
     }
     if (safeMode) {
+      Double cpuUsage = getSafeModeCpuUsage();
+      String memoryUsage = getSafeModeMemoryUsage();
+      String swapUsage = getSafeModeSwapUsage();
+      client.logMessage(new MessageParams(MessageType.Info, "Setting CPU Usage to " + cpuUsage + ", memory to " + memoryUsage + ", swap to " + swapUsage));
+      if(cpuUsage != null) api.setSafeModeCpuUsage(cpuUsage);
+      if(memoryUsage != null) api.setSafeModeMemoryUsage(memoryUsage);
+      if(swapUsage != null) api.setSafeModeSwapUsage(swapUsage);
       boolean succeeded = applyServerConfiguredSolverPaths(api);
       if(!succeeded) {
         return null;
@@ -1213,7 +1253,8 @@ private MCSCategory stringToMCSCategory(String cat){
         configureIncludeContext(api, uri);
         return api.interpret(getText(uri), main, json);
       } catch (URISyntaxException | InterruptedException
-          | ExecutionException | IOException e) {
+          | ExecutionException | IOException
+          | IllegalArgumentException e) {
         throw new ResponseErrorException(new ResponseError(
             ResponseErrorCode.InternalError, e.getMessage(), e));
       }
