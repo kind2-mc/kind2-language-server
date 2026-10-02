@@ -116,7 +116,7 @@ public class Kind2LanguageServer
   }
   private static Double getSafeModeCpuUsage(){
     String value = System.getenv(SAFE_MODE_CPU_USAGE_ENV_VAR);
-    if (value.trim().isEmpty()){
+    if (value == null || value.trim().isEmpty()){
       return null;
     }
     try{
@@ -128,7 +128,7 @@ public class Kind2LanguageServer
 
   private static String getMemoryAmount(String env_var){
     String value = System.getenv(env_var);
-    if (value.trim().isEmpty()){
+    if (value == null || value.trim().isEmpty()){
       return null;
     }    
     return value;
