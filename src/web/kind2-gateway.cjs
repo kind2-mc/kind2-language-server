@@ -20,6 +20,27 @@ const KIND2_Z3_BIN = toAbsolutePath(
       ? './z3'
       : undefined)
 );
+const KIND2_BITWUZLA_BIN = toAbsolutePath(
+  pickEnvValue(process.env.KIND2_BITWUZLA_BIN)
+);
+const KIND2_CVC5_BIN = toAbsolutePath(
+  pickEnvValue(process.env.KIND2_CVC5_BIN)
+);
+const KIND2_MATHSAT_BIN = toAbsolutePath(
+  pickEnvValue(process.env.KIND2_MATHSAT_BIN)
+);
+const KIND2_OPENSMT_BIN = toAbsolutePath(
+  pickEnvValue(process.env.KIND2_OPENSMT_BIN)
+);
+const KIND2_SMTINTERPOL_JAR = toAbsolutePath(
+  pickEnvValue(process.env.KIND2_SMTINTERPOL_JAR)
+);
+const KIND2_YICES_BIN = toAbsolutePath(
+  pickEnvValue(process.env.KIND2_YICES_BIN)
+);
+const KIND2_YICES2_BIN = toAbsolutePath(
+  pickEnvValue(process.env.KIND2_YICES2_BIN)
+);
 const KIND2_SAFE_MODE_CPU = pickEnvValue(
   process.env.KIND2_SAFE_MODE_CPU,
   '2.0'
@@ -61,6 +82,27 @@ const JAVA_ENV = {
   KIND2_SAFE_MODE_CPU: KIND2_SAFE_MODE_CPU,
   KIND2_SAFE_MODE_MEMORY: KIND2_SAFE_MODE_MEMORY,
   KIND2_SAFE_MODE_SWAP: KIND2_SAFE_MODE_SWAP,
+  ...(KIND2_BITWUZLA_BIN !== undefined
+    ? { KIND2_BITWUZLA_BIN }
+    : {}),
+  ...(KIND2_CVC5_BIN !== undefined
+    ? { KIND2_CVC5_BIN }
+    : {}),
+  ...(KIND2_MATHSAT_BIN !== undefined
+    ? { KIND2_MATHSAT_BIN }
+    : {}),
+  ...(KIND2_OPENSMT_BIN !== undefined
+    ? { KIND2_OPENSMT_BIN }
+    : {}),
+  ...(KIND2_SMTINTERPOL_JAR !== undefined
+    ? { KIND2_SMTINTERPOL_JAR }
+    : {}),
+  ...(KIND2_YICES_BIN !== undefined
+    ? { KIND2_YICES_BIN }
+    : {}),
+  ...(KIND2_YICES2_BIN !== undefined
+    ? { KIND2_YICES2_BIN }
+    : {}),
   ...(KIND2_Z3_BIN !== undefined
     ? { KIND2_Z3_BIN }
     : {})
