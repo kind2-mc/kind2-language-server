@@ -335,7 +335,8 @@ public class Kind2LanguageServer
       api.setLsp(true);
       parseResults.put(uri, api.execute(getText(uri)));
     } catch (Kind2Exception | URISyntaxException | IOException
-        | InterruptedException | ExecutionException e) {
+      | InterruptedException | ExecutionException
+      | IllegalArgumentException e) {
       throw new ResponseErrorException(
           new ResponseError(ResponseErrorCode.ParseError, e.getMessage(), e));
     }
@@ -534,7 +535,8 @@ public class Kind2LanguageServer
                             monitor,
                             listener);
       } catch (Kind2Exception | IOException | URISyntaxException
-          | InterruptedException | ExecutionException e) {
+          | InterruptedException | ExecutionException
+          | IllegalArgumentException e) {
         throw new ResponseErrorException(new ResponseError(
             ResponseErrorCode.InternalError, e.getMessage(), e));
       }
@@ -616,7 +618,8 @@ public class Kind2LanguageServer
                             listener
                           );
       } catch (Kind2Exception | IOException | URISyntaxException
-          | InterruptedException | ExecutionException e) {
+          | InterruptedException | ExecutionException
+          | IllegalArgumentException e) {
         throw new ResponseErrorException(new ResponseError(
             ResponseErrorCode.InternalError, e.getMessage(), e));
       }
@@ -727,7 +730,8 @@ public class Kind2LanguageServer
                             monitor,
                             listener);
       } catch (Kind2Exception | IOException | URISyntaxException
-          | InterruptedException | ExecutionException e) {
+          | InterruptedException | ExecutionException
+          | IllegalArgumentException e) {
         throw new ResponseErrorException(new ResponseError(
             ResponseErrorCode.InternalError, e.getMessage(), e));
       }
@@ -1249,7 +1253,8 @@ private MCSCategory stringToMCSCategory(String cat){
         configureIncludeContext(api, uri);
         return api.interpret(getText(uri), main, json);
       } catch (URISyntaxException | InterruptedException
-          | ExecutionException | IOException e) {
+          | ExecutionException | IOException
+          | IllegalArgumentException e) {
         throw new ResponseErrorException(new ResponseError(
             ResponseErrorCode.InternalError, e.getMessage(), e));
       }
