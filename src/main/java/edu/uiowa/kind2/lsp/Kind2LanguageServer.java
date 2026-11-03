@@ -754,13 +754,31 @@ public class Kind2LanguageServer
         null));
   }
 
+  /**
+   * The analysis results of an open document, for an analysis of component
+   * {@code name}.
+   */
+  private Map<String, NodeResult> openAnalysisResults(String uri, String name) {
+    // The maps don't take null keys, so reject a missing uri or name here.
+    if (uri == null || name == null) {
+      throw new ResponseErrorException(new ResponseError(
+          ResponseErrorCode.InvalidParams, "Expected a document URI and a component name", null));
+    }
+    Map<String, NodeResult> results = analysisResults.get(uri);
+    if (results == null) {
+      throw new ResponseErrorException(new ResponseError(
+          ResponseErrorCode.InvalidParams, "File not open: " + uri, null));
+    }
+    return results;
+  }
+
   @JsonRequest(value = "kind2/minimalCutSet", useSegment = false)
   public CompletableFuture<List<String>> minimalCutSet(String rawUri, String name, String compKind) {
     return CompletableFutures.computeAsync(cancelToken -> {
       String uri = normalizeUri(rawUri);
       client.logMessage(new MessageParams(MessageType.Info,
           "Checking minimal cut sets of component " + name + " in " + uri + "..."));
-      analysisResults.get(uri).remove(name);
+      openAnalysisResults(uri, name).remove(name);
       Result result = new Result();
       IProgressMonitor monitor =
           monitorFrom(() -> cancelToken != null && cancelToken.isCanceled());
@@ -836,7 +854,7 @@ public class Kind2LanguageServer
       String uri = normalizeUri(rawUri);
       client.logMessage(new MessageParams(MessageType.Info,
           "Checking component " + name + " in " + uri + "..."));
-      analysisResults.get(uri).remove(name);
+      openAnalysisResults(uri, name).remove(name);
       Result result = new Result();
       IProgressMonitor monitor =
           monitorFrom(() -> cancelToken != null && cancelToken.isCanceled());
@@ -940,7 +958,7 @@ public class Kind2LanguageServer
       String uri = normalizeUri(rawUri);
       client.logMessage(new MessageParams(MessageType.Info,
           "Checking realizability of component " + name + " in " + uri + "..."));
-      analysisResults.get(uri).remove(name);
+      openAnalysisResults(uri, name).remove(name);
       Result result = new Result();
       IProgressMonitor monitor =
           monitorFrom(() -> cancelToken != null && cancelToken.isCanceled());
@@ -1051,7 +1069,8 @@ public class Kind2LanguageServer
       List<String> abs, List<String> concrete, String property) {
     return CompletableFuture.supplyAsync(() -> {
       String uri = normalizeUri(rawUri);
-      if (!analysisResults.containsKey(uri)) {
+      // The maps don't take null keys, so answer a missing uri or component here.
+      if (uri == null || component == null || !analysisResults.containsKey(uri)) {
         return null;
       }
       if (!analysisResults.get(uri).containsKey(component)) {
@@ -1086,7 +1105,8 @@ public class Kind2LanguageServer
   public CompletableFuture<String> deadlock(String rawUri, String component, String context) {
     return CompletableFuture.supplyAsync(() -> {
       String uri = normalizeUri(rawUri);
-      if (!analysisResults.containsKey(uri)) {
+      // The maps don't take null keys, so answer a missing uri or component here.
+      if (uri == null || component == null || !analysisResults.containsKey(uri)) {
         return null;
       }
       if (!analysisResults.get(uri).containsKey(component)) {
