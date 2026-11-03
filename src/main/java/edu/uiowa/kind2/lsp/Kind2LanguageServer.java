@@ -24,7 +24,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
@@ -1550,13 +1549,12 @@ private MCSCategory stringToMCSCategory(String cat){
       parseScheduler.shutdownNow();
       // Pending parses will never run, so don't keep requests waiting on them.
       documentVersions.values().forEach(version -> version.settled.complete(null));
+      // Waits for every parse the executor accepted, including one handed to
+      // it just before shutdown. After the timeout, shut down anyway.
       try {
-        CompletableFuture.allOf(runningParses.toArray(new CompletableFuture<?>[0]))
-            .get(SHUTDOWN_WAIT_SECONDS, TimeUnit.SECONDS);
+        parseExecutor.awaitTermination(SHUTDOWN_WAIT_SECONDS, TimeUnit.SECONDS);
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
-      } catch (ExecutionException | TimeoutException e) {
-        // Shut down anyway.
       }
       return 0;
     });
