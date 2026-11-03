@@ -1583,6 +1583,10 @@ private MCSCategory stringToMCSCategory(String cat){
       @Override
       public void didChange(DidChangeTextDocumentParams params) {
         String uri = normalizeUri(params.getTextDocument().getUri());
+        if (uri == null || !openDocuments.containsKey(uri)) {
+          // Only open documents are tracked, versioned and parsed.
+          return;
+        }
         String text = params.getContentChanges().get(0).getText();
         openDocuments.replace(uri, text);
         analysisResults.put(uri, new ConcurrentHashMap<>());
