@@ -24,7 +24,6 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.stream.Collectors;
 
@@ -137,7 +136,6 @@ public class Kind2LanguageServer
    * that publishes just after an edit is replaced by the next one.
    */
   private final Object publishLock = new Object();
-  private final Map<String, ScheduledFuture<?>> pendingParses;
   private final ScheduledExecutorService parseScheduler;
   /**
    * Runs the parses themselves, which block on Kind 2, so they never wait for
@@ -153,6 +151,18 @@ public class Kind2LanguageServer
      * (a newer version, a close, or shutdown).
      */
     final CompletableFuture<Void> settled = new CompletableFuture<>();
+    /**
+     * The debounce timer that will parse this version, if any. Set and
+     * cancelled in order on the thread that reads client messages.
+     */
+    volatile ScheduledFuture<?> pendingParse;
+
+    void cancelPendingParse() {
+      ScheduledFuture<?> pending = pendingParse;
+      if (pending != null) {
+        pending.cancel(false);
+      }
+    }
   }
 
   public Kind2LanguageServer() {
@@ -161,7 +171,6 @@ public class Kind2LanguageServer
     parseResults = new ConcurrentHashMap<>();
     analysisResults = new ConcurrentHashMap<>();
     documentVersions = new ConcurrentHashMap<>();
-    pendingParses = new ConcurrentHashMap<>();
     AtomicInteger parseThreads = new AtomicInteger();
     parseExecutor = Executors.newCachedThreadPool(runnable -> {
       Thread thread = new Thread(runnable, "kind2-parse-" + parseThreads.incrementAndGet());
@@ -395,9 +404,9 @@ public class Kind2LanguageServer
     DocumentVersion version = new DocumentVersion();
     DocumentVersion previous = documentVersions.put(uri, version);
     if (previous != null) {
+      previous.cancelPendingParse();
       previous.settled.complete(null);
     }
-    cancelPendingParse(uri);
     return version;
   }
 
@@ -409,19 +418,12 @@ public class Kind2LanguageServer
     synchronized (publishLock) {
       DocumentVersion previous = documentVersions.remove(uri);
       if (previous != null) {
+        previous.cancelPendingParse();
         previous.settled.complete(null);
       }
       parseResults.remove(uri);
       client.publishDiagnostics(
           new PublishDiagnosticsParams(uri, new ArrayList<>()));
-    }
-    cancelPendingParse(uri);
-  }
-
-  private void cancelPendingParse(String uri) {
-    ScheduledFuture<?> pending = pendingParses.remove(uri);
-    if (pending != null) {
-      pending.cancel(false);
     }
   }
 
@@ -489,22 +491,14 @@ public class Kind2LanguageServer
   private void scheduleParse(String uri, DocumentVersion version, String text) {
     // The timer only hands the parse off, so a long parse of one document
     // never delays the timers of the others.
-    // Lets the timer remove its own entry when it fires, but not a newer
-    // timer's that has replaced it.
-    AtomicReference<ScheduledFuture<?>> self = new AtomicReference<>();
-    ScheduledFuture<?> pending;
     try {
-      pending = parseScheduler.schedule(() -> {
-        pendingParses.remove(uri, self.get());
-        startParse(uri, version, text);
-      }, PARSE_DEBOUNCE_MS, TimeUnit.MILLISECONDS);
-      self.set(pending);
+      version.pendingParse = parseScheduler.schedule(
+          () -> startParse(uri, version, text),
+          PARSE_DEBOUNCE_MS, TimeUnit.MILLISECONDS);
     } catch (RejectedExecutionException e) {
       // The server has been shut down, so there is nothing to parse for.
       version.settled.complete(null);
-      return;
     }
-    pendingParses.put(uri, pending);
   }
 
   /**
