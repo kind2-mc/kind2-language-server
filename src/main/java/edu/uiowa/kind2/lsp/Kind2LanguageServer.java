@@ -13,7 +13,6 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -146,7 +145,6 @@ public class Kind2LanguageServer
    * cancelled, so there are about as many threads as documents being parsed.
    */
   private final ExecutorService parseExecutor;
-  private final Set<CompletableFuture<Void>> runningParses;
 
   /** One version of an open document. */
   private static final class DocumentVersion {
@@ -164,7 +162,6 @@ public class Kind2LanguageServer
     analysisResults = new ConcurrentHashMap<>();
     documentVersions = new ConcurrentHashMap<>();
     pendingParses = new ConcurrentHashMap<>();
-    runningParses = ConcurrentHashMap.newKeySet();
     AtomicInteger parseThreads = new AtomicInteger();
     parseExecutor = Executors.newCachedThreadPool(runnable -> {
       Thread thread = new Thread(runnable, "kind2-parse-" + parseThreads.incrementAndGet());
@@ -468,9 +465,8 @@ public class Kind2LanguageServer
    * update its components if the parse was not out of date.
    */
   private void startParse(String uri, DocumentVersion version, String text) {
-    CompletableFuture<Void> run;
     try {
-      run = CompletableFuture.runAsync(() -> {
+      CompletableFuture.runAsync(() -> {
         if (parse(uri, version, text)) {
           client.updateComponents(uri);
         }
@@ -478,17 +474,12 @@ public class Kind2LanguageServer
       .exceptionally(ex -> {
           client.showMessage(getFatalErrorMessage(ex));
           return null;
-      });
+      })
+      .whenComplete((ignored, ex) -> version.settled.complete(null));
     } catch (RejectedExecutionException e) {
       // The server has been shut down, so there is nothing to parse for.
       version.settled.complete(null);
-      return;
     }
-    runningParses.add(run);
-    run.whenComplete((ignored, ex) -> {
-      runningParses.remove(run);
-      version.settled.complete(null);
-    });
   }
 
   /**
