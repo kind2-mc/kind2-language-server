@@ -136,6 +136,8 @@ public class Kind2LanguageServer
    * and while a document is closed, so parses publish in version order and
    * none can publish after a close. A new version doesn't take it: a parse
    * that publishes just after an edit is replaced by the next one.
+   * Analyses (check, realizability, minimal cut sets) also publish their
+   * diagnostics under it, and only while the version they ran on is the latest.
    */
   private final Object publishLock = new Object();
   private final ScheduledExecutorService parseScheduler;
@@ -432,6 +434,19 @@ public class Kind2LanguageServer
   private boolean isLatestVersion(String uri, DocumentVersion version) {
     // After shutdown, every parse is out of date.
     return !parseExecutor.isShutdown() && documentVersions.get(uri) == version;
+  }
+
+  /**
+   * Publishes an analysis's diagnostics, unless the document has changed or
+   * been closed since the analysis started on {@code version}.
+   */
+  private void publishAnalysisDiagnostics(String uri, DocumentVersion version,
+      List<Diagnostic> diagnostics) {
+    synchronized (publishLock) {
+      if (version != null && isLatestVersion(uri, version)) {
+        client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
+      }
+    }
   }
 
   /**
@@ -775,14 +790,18 @@ public class Kind2LanguageServer
       String uri = normalizeUri(rawUri);
       client.logMessage(new MessageParams(MessageType.Info,
           "Checking minimal cut sets of component " + name + " in " + uri + "..."));
-      openAnalysisResults(uri, name).remove(name);
+      // Read the version before the text (in getText), so an edit in between
+      // only makes this analysis look out of date, never current.
+      DocumentVersion version = documentVersions.get(uri);
+      Map<String, NodeResult> results = openAnalysisResults(uri, name);
+      results.remove(name);
       Result result = new Result();
       IProgressMonitor monitor =
           monitorFrom(() -> cancelToken != null && cancelToken.isCanceled());
 
       ResultListener listener = new ResultListener() {
           public void onUpdate(Result result){
-            List<String> json = handleMCSResult(result, uri);
+            List<String> json = handleMCSResult(result, uri, version, results);
             client.minimalCutSetResultUpdate(uri, name,json);
           } 
         };
@@ -810,14 +829,15 @@ public class Kind2LanguageServer
         cancelToken.checkCanceled();
       }
       client.minimalCutSetComplete(uri, name);
-      return handleMCSResult(result, uri);
+      return handleMCSResult(result, uri, version, results);
     });
   }
 
-  private List<String> handleMCSResult(Result result, String uri){
+  private List<String> handleMCSResult(Result result, String uri,
+      DocumentVersion version, Map<String, NodeResult> results){
     for (Map.Entry<String, NodeResult> entry : result.getResultMap()
           .entrySet()) {
-        analysisResults.get(uri).put(entry.getKey(), entry.getValue());
+        results.put(entry.getKey(), entry.getValue());
       }
 
       List<Diagnostic> diagnostics = new ArrayList<>();
@@ -827,7 +847,7 @@ public class Kind2LanguageServer
           diagnostics.add(diagnostic);
         }
       }
-      client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
+      publishAnalysisDiagnostics(uri, version, diagnostics);
 
       checkLog(result);
       List<String> mcss = new LinkedList<>();
@@ -851,7 +871,11 @@ public class Kind2LanguageServer
       String uri = normalizeUri(rawUri);
       client.logMessage(new MessageParams(MessageType.Info,
           "Checking component " + name + " in " + uri + "..."));
-      openAnalysisResults(uri, name).remove(name);
+      // Read the version before the text (in getText), so an edit in between
+      // only makes this analysis look out of date, never current.
+      DocumentVersion version = documentVersions.get(uri);
+      Map<String, NodeResult> results = openAnalysisResults(uri, name);
+      results.remove(name);
       Result result = new Result();
       IProgressMonitor monitor =
           monitorFrom(() -> cancelToken != null && cancelToken.isCanceled());
@@ -861,7 +885,7 @@ public class Kind2LanguageServer
         configureIncludeContext(api, uri);
         ResultListener listener = new ResultListener() {
           public void onUpdate(Result result){
-            List<String> json = handleCheckResult(result, uri);
+            List<String> json = handleCheckResult(result, uri, version, results);
             client.checkResultUpdate(uri, name,json);
           } 
         };
@@ -885,15 +909,16 @@ public class Kind2LanguageServer
         cancelToken.checkCanceled();
       }
       client.checkComplete(uri, name);
-      return handleCheckResult(result, uri);
+      return handleCheckResult(result, uri, version, results);
     });
   }
 
-  private List<String> handleCheckResult(Result result, String uri) {
+  private List<String> handleCheckResult(Result result, String uri,
+      DocumentVersion version, Map<String, NodeResult> results) {
     
       for (Map.Entry<String, NodeResult> entry : result.getResultMap()
           .entrySet()) {
-        analysisResults.get(uri).put(entry.getKey(), entry.getValue());
+        results.put(entry.getKey(), entry.getValue());
       }
 
       List<Diagnostic> diagnostics = new ArrayList<>();
@@ -903,7 +928,7 @@ public class Kind2LanguageServer
           diagnostics.add(diagnostic);
         }
       }
-      client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
+      publishAnalysisDiagnostics(uri, version, diagnostics);
 
       checkLog(result);
       List<String> ivcs = new LinkedList<>();
@@ -955,13 +980,17 @@ public class Kind2LanguageServer
       String uri = normalizeUri(rawUri);
       client.logMessage(new MessageParams(MessageType.Info,
           "Checking realizability of component " + name + " in " + uri + "..."));
-      openAnalysisResults(uri, name).remove(name);
+      // Read the version before the text (in getText), so an edit in between
+      // only makes this analysis look out of date, never current.
+      DocumentVersion version = documentVersions.get(uri);
+      Map<String, NodeResult> results = openAnalysisResults(uri, name);
+      results.remove(name);
       Result result = new Result();
       IProgressMonitor monitor =
           monitorFrom(() -> cancelToken != null && cancelToken.isCanceled());
       ResultListener listener = new ResultListener() {
           public void onUpdate(Result result){
-            List<String> json = handleRealizabilityResult(result, uri);
+            List<String> json = handleRealizabilityResult(result, uri, version, results);
             client.realizabilityResultUpdate(uri, name, json);
           } 
         };
@@ -989,15 +1018,16 @@ public class Kind2LanguageServer
         cancelToken.checkCanceled();
       }
       client.realizabilityComplete(uri, name);
-      return handleRealizabilityResult(result, uri);
+      return handleRealizabilityResult(result, uri, version, results);
       
     });
   }
 
-  private List<String> handleRealizabilityResult(Result result, String uri){
+  private List<String> handleRealizabilityResult(Result result, String uri,
+      DocumentVersion version, Map<String, NodeResult> results){
     for (Map.Entry<String, NodeResult> entry : result.getResultMap()
           .entrySet()) {
-        analysisResults.get(uri).put(entry.getKey(), entry.getValue());
+        results.put(entry.getKey(), entry.getValue());
       }
 
       List<Diagnostic> diagnostics = new ArrayList<>();
@@ -1007,7 +1037,7 @@ public class Kind2LanguageServer
           diagnostics.add(diagnostic);
         }
       }
-      client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
+      publishAnalysisDiagnostics(uri, version, diagnostics);
 
       checkLog(result);
 
