@@ -113,6 +113,8 @@ public class Kind2LanguageServer
   private static final long PARSE_DEBOUNCE_MS = 300;
   // How long a request that reads parse results waits for the latest parse.
   private static final long PARSE_WAIT_SECONDS = 5;
+  // The same, in safe mode, where each parse also starts a container.
+  private static final long SAFE_MODE_PARSE_WAIT_SECONDS = 20;
   // How long shutdown waits for running parses to stop.
   private static final long SHUTDOWN_WAIT_SECONDS = 10;
 
@@ -435,13 +437,16 @@ public class Kind2LanguageServer
   /**
    * Completes once the latest version of a document has been parsed, so its
    * parse results match the text the client has. Gives up after
-   * {@link #PARSE_WAIT_SECONDS}, after which the results may be out of date.
+   * {@link #PARSE_WAIT_SECONDS} ({@link #SAFE_MODE_PARSE_WAIT_SECONDS} in safe
+   * mode), after which the results may be out of date.
    */
   private CompletableFuture<Void> whenParsed(String uri) {
     CompletableFuture<Void> parsed = latestVersionParsed(uri);
     try {
       ScheduledFuture<?> timeout = parseScheduler.schedule(
-          () -> parsed.complete(null), PARSE_WAIT_SECONDS, TimeUnit.SECONDS);
+          () -> parsed.complete(null),
+          safeMode ? SAFE_MODE_PARSE_WAIT_SECONDS : PARSE_WAIT_SECONDS,
+          TimeUnit.SECONDS);
       parsed.whenComplete((ignored, ex) -> timeout.cancel(false));
     } catch (RejectedExecutionException e) {
       // The server has been shut down, so there is nothing left to wait for.
