@@ -543,9 +543,17 @@ public class Kind2LanguageServer
     try {
       Kind2Api api = getPresetKind2Api();
       if (api == null) {
-        // No usable Kind 2 (the user was already told why). Still have the
-        // client update its components, as it did before parses were versioned.
-        return isLatestVersion(uri, version);
+        // No usable Kind 2 (the user was already told why). As when a parse
+        // fails, drop the older version's results, which no longer match the
+        // text, and still have the client update its components.
+        synchronized (publishLock) {
+          if (!isLatestVersion(uri, version)) {
+            return false;
+          }
+          parseResults.remove(uri);
+          client.publishDiagnostics(new PublishDiagnosticsParams(uri, new ArrayList<>()));
+        }
+        return true;
       }
       configureIncludeContext(api, uri);
       api.setOnlyParse(true);
