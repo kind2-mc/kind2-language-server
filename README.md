@@ -41,6 +41,13 @@ npm run start
 
 Setting the variable to `*` will allow all origins: `export KIND2_ALLOWED_ORIGINS="*"`
 
+By default, the gateway logs connection events and errors, but not individual LSP messages. To also log each message for debugging, set `KIND2_GATEWAY_VERBOSE=true`:
+
+```terminal
+export KIND2_GATEWAY_VERBOSE=true
+npm run start
+```
+
 ## Safe mode
 
 When the language server is exposed to untrusted clients, enable safe mode so the server does not trust executable paths from the editor extension.
