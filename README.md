@@ -71,12 +71,12 @@ The gateway will look for only `./src/web/z3` and `./src/web/kind2` automaticall
 
 ### Docker image
 
-Safe mode runs Kind 2 in a Docker image named `kind2-safe:latest`, which you must build before starting the server. The Dockerfile is in the [kind2-java-api](https://github.com/kind2-mc/kind2-java-api) repository:
+Safe mode runs Kind 2 in a Docker image named `kind2-safe:latest`, which you must build before starting the server. The Dockerfile and build script are in the [kind2-java-api](https://github.com/kind2-mc/kind2-java-api) repository:
 
 ```terminal
 git clone https://github.com/kind2-mc/kind2-java-api.git
 cd kind2-java-api
-docker build -t kind2-safe:latest .
+./build-docker.sh
 ```
 
 The image doesn't include Kind 2 or any solvers. They are mounted read-only from the paths configured on the server, so each binary must be able to run inside the image. A dynamically linked binary that works on the host can still fail in the container if the image lacks the libraries it needs.
