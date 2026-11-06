@@ -69,6 +69,18 @@ In safe mode, the server ignores client-provided Kind 2 and solver binary paths.
 
 The gateway will look for only `./src/web/z3` and `./src/web/kind2` automatically. So an alternative to setting the `KIND2_PATH` and `KIND2_*_BIN` is to include `kind2` and `z3` at `./src/web/`. If `KIND2_PATH` or `KIND2_Z3_BIN` are set, then those will be the paths used instead.
 
+### Docker image
+
+Safe mode runs Kind 2 in a Docker image named `kind2-safe:latest`, which you must build before starting the server. The Dockerfile and build script are in the [kind2-java-api](https://github.com/kind2-mc/kind2-java-api) repository:
+
+```terminal
+git clone https://github.com/kind2-mc/kind2-java-api.git
+cd kind2-java-api
+./build-docker.sh
+```
+
+The image doesn't include Kind 2 or any solvers. They are mounted read-only from the paths configured on the server, so each binary must be able to run inside the image. A dynamically linked binary that works on the host can still fail in the container if the image lacks the libraries it needs.
+
 ### Safe mode resource limits
 
 When safe mode is enabled, each execution of Kind 2 is run inside a Docker container with CPU and memory limits.
