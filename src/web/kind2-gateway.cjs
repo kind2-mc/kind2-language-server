@@ -8,6 +8,7 @@ const WEBSOCKET_PORT = 3001;
 const WEBSOCKET_HOST = '127.0.0.1';
 const WEBSOCKET_PATH = '/lsp';
 const GATEWAY_DIR = __dirname;
+const VERBOSE = process.env.KIND2_GATEWAY_VERBOSE === 'true';
 const KIND2_PATH = toAbsolutePath(
   pickEnvValue(
     process.env.KIND2_PATH,
@@ -172,13 +173,17 @@ webSocketServer.on('connection', webSocket => {
   webSocket.on('message', data => {
     const json = data.toString('utf8');
 
-    console.log(
-      'Browser -> gateway:',
-      summarizeMessage(json)
-    );
+    if (VERBOSE) {
+      console.log(
+        'Browser -> gateway:',
+        summarizeMessage(json)
+      );
+    }
 
     if (javaSocket === undefined) {
-      console.log('Queueing message until Java connects');
+      if (VERBOSE) {
+        console.log('Queueing message until Java connects');
+      }
       pendingBrowserMessages.push(json);
       return;
     }
@@ -199,10 +204,12 @@ webSocketServer.on('connection', webSocket => {
     connectJavaToBrowser(webSocket, javaSocket);
 
     for (const json of pendingBrowserMessages) {
-      console.log(
-        'Forwarding queued message:',
-        summarizeMessage(json)
-      );
+      if (VERBOSE) {
+        console.log(
+          'Forwarding queued message:',
+          summarizeMessage(json)
+        );
+      }
 
       writeLspMessage(javaSocket, json);
     }
@@ -310,9 +317,11 @@ function connectJavaToBrowser(
   let javaOutputBuffer = Buffer.alloc(0);
 
   javaSocket.on('data', chunk => {
-    console.log(
-      `Received ${chunk.length} raw bytes from Java`
-    );
+    if (VERBOSE) {
+      console.log(
+        `Received ${chunk.length} raw bytes from Java`
+      );
+    }
 
     javaOutputBuffer = Buffer.concat([
       javaOutputBuffer,
@@ -323,10 +332,12 @@ function connectJavaToBrowser(
       javaOutputBuffer = extractLspMessages(
         javaOutputBuffer,
         json => {
-          console.log(
-            'Java -> Browser:',
-            summarizeMessage(json)
-          );
+          if (VERBOSE) {
+            console.log(
+              'Java -> Browser:',
+              summarizeMessage(json)
+            );
+          }
 
           if (
             webSocket.readyState === WebSocket.OPEN
