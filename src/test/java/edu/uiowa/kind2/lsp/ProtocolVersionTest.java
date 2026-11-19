@@ -19,6 +19,7 @@ import org.eclipse.lsp4j.jsonrpc.messages.ResponseError;
 import org.junit.jupiter.api.Test;
 
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 class ProtocolVersionTest {
   private static JsonObject options(Object version) {
@@ -52,6 +53,25 @@ class ProtocolVersionTest {
     assertNull(Kind2LanguageServer.checkProtocolVersion(null));
     assertNull(Kind2LanguageServer.checkProtocolVersion(new JsonObject()));
     assertNull(Kind2LanguageServer.checkProtocolVersion(new String[] { "-json" }));
+    assertNull(Kind2LanguageServer.checkProtocolVersion(parse("null")));
+  }
+
+  // Parses the version the way it arrives from a client, as JSON text.
+  private static JsonObject parse(String version) {
+    return JsonParser.parseString(
+        "{\"" + Kind2LanguageServer.PROTOCOL_VERSION_OPTION + "\": " + version + "}")
+        .getAsJsonObject();
+  }
+
+  @Test
+  void rejectsOutOfRangeVersionsWithoutWrappingAround() {
+    // Narrowed to an int, these would become 1, -2147483648 and 1.
+    assertRejected(parse("4294967297"), "needs a newer Kind 2 server");
+    assertRejected(parse("2147483648"), "needs a newer Kind 2 server");
+    assertRejected(parse("-4294967295"), "Please update the extension");
+    assertRejected(parse("1e400"), "invalid protocol version");
+    assertRejected(parse("-1e400"), "invalid protocol version");
+    assertNull(Kind2LanguageServer.checkProtocolVersion(parse("1.0")));
   }
 
   @Test

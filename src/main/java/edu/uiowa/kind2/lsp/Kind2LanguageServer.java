@@ -662,22 +662,30 @@ public class Kind2LanguageServer
   /**
    * Returns the error to reject initialization with if the client's protocol version, sent in
    * its initialization options, is not one this server supports, or null if it is.
+   * <p>
+   * A rejected client is expected to stop, as vscode-languageclient does. The server doesn't
+   * enforce that: the check helps compatible clients report a mismatch, and isn't a security
+   * boundary, since any client can claim a supported version.
    */
   static ResponseError checkProtocolVersion(Object initializationOptions) {
-    int version = UNVERSIONED_PROTOCOL_VERSION;
-    if (initializationOptions instanceof JsonObject
-        && ((JsonObject) initializationOptions).has(PROTOCOL_VERSION_OPTION)) {
-      JsonElement value =
-          ((JsonObject) initializationOptions).get(PROTOCOL_VERSION_OPTION);
-      if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isNumber()
-          || value.getAsDouble() != Math.floor(value.getAsDouble())) {
-        return protocolVersionError(
-            "The Kind 2 extension sent an invalid protocol version: " + value + ".");
+    double version = UNVERSIONED_PROTOCOL_VERSION;
+    String versionText = String.valueOf(UNVERSIONED_PROTOCOL_VERSION);
+    JsonElement value = initializationOptions instanceof JsonObject
+        ? ((JsonObject) initializationOptions).get(PROTOCOL_VERSION_OPTION)
+        : null;
+    if (value != null && !value.isJsonNull()) {
+      if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isNumber()) {
+        return invalidProtocolVersion(value);
       }
-      version = value.getAsInt();
+      // Compare as a double, since narrowing to an int would wrap out-of-range values around.
+      version = value.getAsDouble();
+      if (Double.isInfinite(version) || version != Math.floor(version)) {
+        return invalidProtocolVersion(value);
+      }
+      versionText = value.getAsString();
     }
 
-    String versions = " (The extension uses protocol version " + version
+    String versions = " (The extension uses protocol version " + versionText
         + ", and the server supports versions " + MIN_PROTOCOL_VERSION + " to "
         + PROTOCOL_VERSION + ".)";
     if (version < MIN_PROTOCOL_VERSION) {
@@ -690,6 +698,11 @@ public class Kind2LanguageServer
           + "newer Kind 2 server than the one it connected to." + versions);
     }
     return null;
+  }
+
+  private static ResponseError invalidProtocolVersion(JsonElement value) {
+    return protocolVersionError(
+        "The Kind 2 extension sent an invalid protocol version: " + value + ".");
   }
 
   private static ResponseError protocolVersionError(String message) {

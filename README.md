@@ -66,6 +66,7 @@ The protocol covers the `kind2/*` requests and notifications in both directions,
 - The extension sends its protocol version as `kind2ProtocolVersion` in the `initializationOptions` of its `initialize` request. An extension that sends no version is treated as version 1.
 - The server accepts versions from `MIN_PROTOCOL_VERSION` to `PROTOCOL_VERSION`, both set in `Kind2LanguageServer.java`. It rejects any other version with an error telling the user what to do.
 - The server reports its `PROTOCOL_VERSION` as `kind2ProtocolVersion` in the `experimental` field of its capabilities.
+- A rejected extension is expected to stop, as VS Code's language client does. The server doesn't enforce this. The check isn't a security measure, because any client can claim a supported version.
 
 ### Making a compatible change
 
