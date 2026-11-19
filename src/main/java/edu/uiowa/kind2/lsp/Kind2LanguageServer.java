@@ -40,6 +40,8 @@ import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.DidSaveTextDocumentParams;
 import org.eclipse.lsp4j.DocumentSymbol;
 import org.eclipse.lsp4j.DocumentSymbolParams;
+import org.eclipse.lsp4j.InitializeError;
+import org.eclipse.lsp4j.InitializeErrorCode;
 import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializeResult;
 import org.eclipse.lsp4j.InitializedParams;
@@ -103,6 +105,15 @@ import edu.uiowa.cs.clc.kind2.results.TypeDeclInfo;
  */
 public class Kind2LanguageServer
     implements org.eclipse.lsp4j.services.LanguageServer, LanguageClientAware {
+
+  // The version of the protocol between the Kind 2 extension and this server. See "Protocol
+  // versions" in the README before changing either value.
+  static final int PROTOCOL_VERSION = 1;
+  // The oldest protocol version this server still supports.
+  static final int MIN_PROTOCOL_VERSION = 1;
+  // Clients from before the version check send no version, and use protocol version 1.
+  private static final int UNVERSIONED_PROTOCOL_VERSION = 1;
+  static final String PROTOCOL_VERSION_OPTION = "kind2ProtocolVersion";
 
   private static final String SAFE_MODE_ENV = "KIND2_SAFE_MODE";
   private static final String SAFE_MODE_CPU_USAGE_ENV_VAR = "KIND2_SAFE_MODE_CPU";
@@ -623,6 +634,13 @@ public class Kind2LanguageServer
   @Override
   public CompletableFuture<InitializeResult> initialize(
       InitializeParams params) {
+    ResponseError versionError =
+        checkProtocolVersion(params.getInitializationOptions());
+    if (versionError != null) {
+      CompletableFuture<InitializeResult> rejected = new CompletableFuture<>();
+      rejected.completeExceptionally(new ResponseErrorException(versionError));
+      return rejected;
+    }
     return CompletableFuture.supplyAsync(() -> {
       client.logMessage(
           new MessageParams(MessageType.Info, "Initializing server..."));
@@ -634,8 +652,49 @@ public class Kind2LanguageServer
       sCapabilities.setTextDocumentSync(syncOptions);
       sCapabilities.setDocumentSymbolProvider(true);
       sCapabilities.setDefinitionProvider(true);
+      JsonObject experimental = new JsonObject();
+      experimental.addProperty(PROTOCOL_VERSION_OPTION, PROTOCOL_VERSION);
+      sCapabilities.setExperimental(experimental);
       return new InitializeResult(sCapabilities);
     });
+  }
+
+  /**
+   * Returns the error to reject initialization with if the client's protocol version, sent in
+   * its initialization options, is not one this server supports, or null if it is.
+   */
+  static ResponseError checkProtocolVersion(Object initializationOptions) {
+    int version = UNVERSIONED_PROTOCOL_VERSION;
+    if (initializationOptions instanceof JsonObject
+        && ((JsonObject) initializationOptions).has(PROTOCOL_VERSION_OPTION)) {
+      JsonElement value =
+          ((JsonObject) initializationOptions).get(PROTOCOL_VERSION_OPTION);
+      if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isNumber()
+          || value.getAsDouble() != Math.floor(value.getAsDouble())) {
+        return protocolVersionError(
+            "The Kind 2 extension sent an invalid protocol version: " + value + ".");
+      }
+      version = value.getAsInt();
+    }
+
+    String versions = " (The extension uses protocol version " + version
+        + ", and the server supports versions " + MIN_PROTOCOL_VERSION + " to "
+        + PROTOCOL_VERSION + ".)";
+    if (version < MIN_PROTOCOL_VERSION) {
+      return protocolVersionError("This version of the Kind 2 extension is no "
+          + "longer supported by the Kind 2 server. Please update the extension."
+          + versions);
+    }
+    if (version > PROTOCOL_VERSION) {
+      return protocolVersionError("This version of the Kind 2 extension needs a "
+          + "newer Kind 2 server than the one it connected to." + versions);
+    }
+    return null;
+  }
+
+  private static ResponseError protocolVersionError(String message) {
+    return new ResponseError(InitializeErrorCode.unknownProtocolVersion,
+        message, new InitializeError(false));
   }
 
   @Override
