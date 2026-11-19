@@ -4,7 +4,9 @@ const { spawn } = require('node:child_process');
 const { WebSocketServer, WebSocket } = require('ws');
 const fs = require('node:fs');
 
-const WEBSOCKET_PORT = 3001;
+const WEBSOCKET_PORT = parsePort(
+  pickEnvValue(process.env.KIND2_GATEWAY_PORT, '3001')
+);
 const WEBSOCKET_HOST = '127.0.0.1';
 const WEBSOCKET_PATH = '/lsp';
 const GATEWAY_DIR = __dirname;
@@ -117,6 +119,21 @@ function pickEnvValue(...values) {
   }
 
   return undefined;
+}
+
+function parsePort(value) {
+  const trimmed = value.trim();
+  const port = Number(trimmed);
+
+  if (!/^\d+$/.test(trimmed) || port < 1 || port > 65535) {
+    console.error(
+      'KIND2_GATEWAY_PORT must be a port number from 1 to 65535, ' +
+      `but was: ${value}`
+    );
+    process.exit(1);
+  }
+
+  return port;
 }
 
 function toAbsolutePath(pathValue) {

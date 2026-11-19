@@ -48,6 +48,13 @@ export KIND2_GATEWAY_VERBOSE=true
 npm run start
 ```
 
+The gateway listens on port 3001. To use another port, for example to run two versions of the gateway side by side, set `KIND2_GATEWAY_PORT`:
+
+```terminal
+export KIND2_GATEWAY_PORT=3002
+npm run start
+```
+
 ## Safe mode
 
 When the language server is exposed to untrusted clients, enable safe mode so the server does not trust executable paths from the editor extension.
