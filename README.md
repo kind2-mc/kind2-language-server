@@ -55,6 +55,36 @@ export KIND2_GATEWAY_PORT=3002
 npm run start
 ```
 
+## Protocol versions
+
+Published versions of the Kind 2 web extension keep connecting to the same server after it's updated, so the server must keep working with them. The extension and the server check that they're compatible using a protocol version number.
+
+The protocol covers the `kind2/*` requests and notifications in both directions, their parameters and results, and the `kind2` settings that the server reads.
+
+### How the check works
+
+- The extension sends its protocol version as `kind2ProtocolVersion` in the `initializationOptions` of its `initialize` request. An extension that sends no version is treated as version 1.
+- The server accepts versions from `MIN_PROTOCOL_VERSION` to `PROTOCOL_VERSION`, both set in `Kind2LanguageServer.java`. It rejects any other version with an error telling the user what to do.
+- The server reports its `PROTOCOL_VERSION` as `kind2ProtocolVersion` in the `experimental` field of its capabilities.
+- A rejected extension is expected to stop, as VS Code's language client does. The server doesn't enforce this. The check isn't a security measure, because any client can claim a supported version.
+
+### Making a compatible change
+
+A compatible change adds to the protocol without breaking older extensions. Examples are a new request, a new optional field, or a new setting.
+
+1. Make the server work without the addition, because older extensions don't send it. For example, a new setting needs a default value in the server.
+2. Increase `PROTOCOL_VERSION` in the server and `KIND2_PROTOCOL_VERSION` in the extension's `src/protocol.ts`, keeping `MIN_PROTOCOL_VERSION` the same.
+3. Deploy the server before publishing the extension. Until then, the new extension is rejected by the old server.
+
+### Making a breaking change
+
+A breaking change is anything older extensions can't handle, such as renaming or removing a request, or changing a field's type.
+
+1. Deploy the new server at a new URL, such as `/app/lsp/v2`, alongside the current one. Run its gateway on another port with `KIND2_GATEWAY_PORT`.
+2. On the new server, raise `MIN_PROTOCOL_VERSION` to its new `PROTOCOL_VERSION`.
+3. Point the extension's default URL at the new address, and increase its `KIND2_PROTOCOL_VERSION` to match.
+4. Keep the old server running until few users remain on older extensions, then retire it.
+
 ## Safe mode
 
 When the language server is exposed to untrusted clients, enable safe mode so the server does not trust executable paths from the editor extension.
