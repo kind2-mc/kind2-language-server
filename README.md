@@ -85,6 +85,24 @@ A breaking change is anything older extensions can't handle, such as renaming or
 3. Point the extension's default URL at the new address, and increase its `KIND2_PROTOCOL_VERSION` to match.
 4. Keep the old server running until few users remain on older extensions, then retire it.
 
+### Retiring an old server
+
+Don't remove a retired server's URL. Point it at the newest server instead. If the URL doesn't reach a server, older extensions can't connect, and users see a connection error rather than a request to update. The newest server rejects their protocol version, because its `MIN_PROTOCOL_VERSION` is above every version the old URL served, so users see "Please update the extension" instead.
+
+For example, to retire `/app/lsp/v1` once the newest gateway runs on port 3002, point both URLs at that gateway in nginx:
+
+```nginx
+# Retired: v1 extensions are asked to update by the v2 server
+location = /app/lsp/v1 {
+    proxy_pass http://127.0.0.1:3002/lsp;
+}
+location = /app/lsp/v2 {
+    proxy_pass http://127.0.0.1:3002/lsp;
+}
+```
+
+Each block also needs the same WebSocket and timeout settings as the others. Each rejected connection still briefly starts a Java server, because the gateway starts one before the extension's `initialize` request arrives.
+
 ## Safe mode
 
 When the language server is exposed to untrusted clients, enable safe mode so the server does not trust executable paths from the editor extension.
